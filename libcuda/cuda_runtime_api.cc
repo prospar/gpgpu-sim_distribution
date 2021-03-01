@@ -143,6 +143,7 @@
 #include "../src/gpgpusim_entrypoint.h"
 #include "../src/stream_manager.h"
 #include "../src/abstract_hardware_model.h"
+#include "../src/gpgpu-sim/scord.h"
 
 #include <pthread.h>
 #include <semaphore.h>
@@ -1001,6 +1002,7 @@ cudaError_t cudaLaunchInternal(const char *hostFun,
       kname.c_str(), stream ? stream->get_uid() : 0, gridDim.x, gridDim.y,
       gridDim.z, blockDim.x, blockDim.y, blockDim.z);
   stream_operation op(grid, ctx->func_sim->g_ptx_sim_mode, stream);
+  scord_kernel_restart(gpu);
   ctx->the_gpgpusim->g_stream_manager->push(op);
   ctx->api->g_cuda_launch_stack.pop_back();
   return g_last_cudaError = cudaSuccess;

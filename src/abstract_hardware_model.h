@@ -991,6 +991,8 @@ enum divergence_support_t { POST_DOMINATOR = 1, NUM_SIMD_MODEL };
 
 const unsigned MAX_ACCESSES_PER_INSN_PER_THREAD = 8;
 
+#include "gpgpu-sim/scord.h"
+
 class warp_inst_t : public inst_t {
  public:
   // constructors
