@@ -1195,6 +1195,8 @@ class warp_inst_t : public inst_t {
   // Jin: cdp support
  public:
   int m_is_cdp;
+  scord_execdata_t m_scord_md;
+
 };
 
 void move_warp(warp_inst_t *&dst, warp_inst_t *&src);

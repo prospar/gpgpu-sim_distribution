@@ -69,6 +69,20 @@ mem_fetch::mem_fetch(const mem_access_t &access, const warp_inst_t *inst,
     m_raw_addr.chip = m_original_mf->get_tlx_addr().chip;
     m_raw_addr.sub_partition = m_original_mf->get_tlx_addr().sub_partition;
   }
+  memspace = NULL;
+#if 1
+  for (int i = 0; i < MF_DATA_ARRAY_SIZE_INTS; i++) {
+    m_data_array[i] = 0xfeedfeed;
+  }
+  m_data_valid = false;
+  m_has_scord_metadata = false;
+  m_scord_data = false;
+  //m_fence_flush_wb = false; 
+#endif
+  printf_scord("@@ cyc%d  s%d  ###  --- mf: %x  CREATED  i:%x m_inst:%x  addr:%x ###################\n", gpu_sim_cycle, m_sid, this, inst, m_inst, access.get_addr());
+  if( inst ) { 
+    printf_scord("@@    ---  s%d mf insn ", sid); if(SCORD_PRINT) inst->print(stdout);
+  }
 }
 
 mem_fetch::~mem_fetch() { m_status = MEM_FETCH_DELETED; }

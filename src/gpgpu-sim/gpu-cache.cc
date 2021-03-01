@@ -636,6 +636,14 @@ void cache_stats::inc_stats(int access_type, int access_outcome) {
     assert(0 && "Unknown cache access type or access outcome");
 
   m_stats[access_type][access_outcome]++;
+  if(access_type == GLOBAL_ACC_R || access_type == GLOBAL_ACC_W)
+  {
+    if(mf->get_addr() >= GLOBAL_HEAP_START && mf->get_addr() < gscord_request.shadow_mem)
+      m_data_stats[access_outcome]++;
+    else if(mf->get_addr() >= gscord_request.shadow_mem && 
+      mf->get_addr() < gscord_request.shadow_mem + gscord_request.shadow_size)
+      m_shadow_stats[access_outcome]++;        
+  }
 }
 
 void cache_stats::inc_stats_pw(int access_type, int access_outcome) {
@@ -1124,6 +1132,20 @@ void baseline_cache::send_read_request(new_addr_type addr,
 
     m_mshrs.add(mshr_addr, mf);
     do_miss = true;
+    // Generate mem_fetch to send info to SCORD on read miss
+    if(SCORD_PERF && mf->has_scord_metadata() && is_l1_cache())
+    {
+      const mem_access_t scord_access(GLOBAL_ACC_R, mf->get_addr(), 0, mf->is_write(), 
+        mf->get_access_warp_mask(), mf->get_access_byte_mask(), mf->get_access_sector_mask(), 
+        mf->get_ldst_data());
+      mem_fetch *scord_mf = new mem_fetch(scord_access, &mf->get_inst(), (unsigned)8, mf->get_wid(), mf->get_sid(), mf->get_tpc(), mf->get_mem_config());
+      scord_mf->is_scord_data() = true;
+      scord_mf->has_scord_metadata() = true;
+      scord_mf->memspace = mf->memspace;
+      memcpy(scord_mf->get_scord_metadata(), mf->get_scord_metadata(), SCORD_PACKET_SIZE);
+      m_miss_queue.push_back(scord_mf);
+      printf_scord("scord L1 read_miss: Generating dup mf (%x) for detector\n", scord_mf);
+    }
 
   } else if (!mshr_hit && mshr_avail &&
              (m_miss_queue.size() < m_config.m_miss_queue_size)) {

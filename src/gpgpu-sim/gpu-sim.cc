@@ -48,6 +48,7 @@
 #include "gpu-misc.h"
 #include "icnt_wrapper.h"
 #include "l2cache.h"
+#include "scord.h"
 #include "shader.h"
 #include "stat-tool.h"
 
@@ -1749,7 +1750,7 @@ void gpgpu_sim::cycle() {
   if (clock_mask & ICNT) {
     // pop from memory controller to interconnect
     for (unsigned i = 0; i < m_memory_config->m_n_mem_sub_partition; i++) {
-      mem_fetch *mf = m_memory_sub_partition[i]->top();
+      mem_fetch* mf = gscord_request.process_mem_requests(m_memory_sub_partition, i, gpu_sim_cycle+gpu_tot_sim_cycle);
       if (mf) {
         unsigned response_size =
             mf->get_is_write() ? mf->get_ctrl_size() : mf->size();
@@ -1804,6 +1805,8 @@ void gpgpu_sim::cycle() {
         gpu_stall_dramfull++;
       } else {
         mem_fetch *mf = (mem_fetch *)icnt_pop(m_shader_config->mem2device(i));
+        // Read and push here? XXX SCORD
+        gscord_request.generate_mem_request(&mf, m_memory_sub_partition, gpu_sim_cycle + gpu_tot_sim_cycle);
         m_memory_sub_partition[i]->push(mf, gpu_sim_cycle + gpu_tot_sim_cycle);
         if (mf) partiton_reqs_in_parallel_per_cycle++;
       }

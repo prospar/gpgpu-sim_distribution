@@ -31,6 +31,7 @@
 
 #include <bitset>
 #include "../abstract_hardware_model.h"
+#include "scord.h"
 #include "addrdec.h"
 
 enum mf_type {
@@ -82,11 +83,52 @@ class mem_fetch {
   }
   unsigned get_data_size() const { return m_data_size; }
   void set_data_size(unsigned size) { m_data_size = size; }
+
+#if 1
+#define MF_DATA_ARRAY_SIZE_BYTES  128    /* in bytes */
+#define MF_DATA_ARRAY_SIZE_INTS   (MF_DATA_ARRAY_SIZE_BYTES / sizeof(unsigned))    /* in ints */
+  /*void set_data_array(unsigned arr[], unsigned size) { 
+      assert(size <= m_data_size);
+      assert(size <= MF_DATA_ARRAY_SIZE_BYTES);
+      assert(m_data_size <= MF_DATA_ARRAY_SIZE_BYTES);
+      int n = (size < m_data_size) ? size: m_data_size;
+      n = (n < MF_DATA_ARRAY_SIZE_BYTES)? n: MF_DATA_ARRAY_SIZE_BYTES;
+      memcpy(&m_data_array, arr, n);
+    }*/
+
+  std::bitset<MF_DATA_ARRAY_SIZE_BYTES> &get_data_used() { return m_data_used; }
+  void set_data_used(unsigned index) { m_data_used.set(index); }
+  void set_data_valid(bool valid) { m_data_valid = valid; }
+  bool get_data_valid(void) { return m_data_valid; }
+  bool &has_scord_metadata() { return m_has_scord_metadata; }
+  unsigned char *get_scord_metadata() { return m_scord_metadata; }
+  bool &is_scord_data() { return m_scord_data; }
+  unsigned int *get_data_array(void) { return m_data_array; }
+  void print_data_array(void) { 
+      printf_scord("\tMF_DA:  datasz:%u\n\t", m_data_used.count());
+      if (!get_data_valid()) {
+          printf_scord("\t -- data-is-invalid -- \n");
+          return;
+      }
+      for (int i = 0; i < MF_DATA_ARRAY_SIZE_INTS; i++) {
+          printf_scord("0x%08x ", m_data_array[i]);
+          if ((i%8) == 7) { printf_scord("\n\t"); }
+      }
+      printf_scord("\n");
+      printf_scord("\t%s ", m_data_used.to_string<char,std::string::traits_type,std::string::allocator_type>().c_str());
+      printf_scord("\n");
+  }
+#endif
+
   unsigned get_ctrl_size() const { return m_ctrl_size; }
   unsigned size() const { return m_data_size + m_ctrl_size; }
   bool is_write() { return m_access.is_write(); }
   void set_addr(new_addr_type addr) { m_access.set_addr(addr); }
   new_addr_type get_addr() const { return m_access.get_addr(); }
+#if 1
+  //memory_space *get_mem_space() { return m_access.get_mem_space(); }
+  std::set<ldst_data_alvin> *get_ldst_data() { return m_access.get_ldst_data(); }
+#endif
   unsigned get_access_size() const { return m_access.get_size(); }
   new_addr_type get_partition_addr() const { return m_partition_addr; }
   unsigned get_sub_partition_id() const { return m_raw_addr.sub_partition; }
@@ -128,6 +170,8 @@ class mem_fetch {
   mem_fetch *get_original_mf() { return original_mf; }
   mem_fetch *get_original_wr_mf() { return original_wr_mf; }
 
+  memory_space *memspace;
+
  private:
   // request source information
   unsigned m_request_uid;
@@ -142,6 +186,13 @@ class mem_fetch {
   // request type, address, size, mask
   mem_access_t m_access;
   unsigned m_data_size;  // how much data is being written
+  std::bitset<MF_DATA_ARRAY_SIZE_BYTES> m_data_used;
+  unsigned m_data_array[MF_DATA_ARRAY_SIZE_INTS];
+  bool m_data_valid;
+  bool m_has_scord_metadata;
+  bool m_scord_data;
+  unsigned char m_scord_metadata[SCORD_PACKET_SIZE];
+  //bool m_fence_flush_wb;  // needed for doing acks for fence triggered flushes
   unsigned
       m_ctrl_size;  // how big would all this meta data be in hardware (does not
                     // necessarily match actual size of mem_fetch)
