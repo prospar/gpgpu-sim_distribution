@@ -47,6 +47,7 @@ class ptx_recognizer;
 #include "../abstract_hardware_model.h"
 #include "../gpgpu-sim/gpu-sim.h"
 #include "../gpgpu-sim/shader.h"
+#include "../gpgpu-sim/scord.h"
 #include "cuda-math.h"
 #include "cuda_device_printf.h"
 #include "ptx.tab.h"
@@ -1289,15 +1290,24 @@ void atom_callback(const inst_t *inst, ptx_thread_info *thread) {
         case U32_TYPE:
           op_result.u32 = MY_CAS_I(data.u32, src2_data.u32, src3_data.u32);
           data_ready = true;
+          // Lock operation
+          if(src2_data.u32 == 0 && src3_data.u32 == 1 && data.u32 == 0)
+            scord_thread_atomgeneric(thread, pI->get_atomic_scope(), false, effective_address);
           break;
         case B64_TYPE:
         case U64_TYPE:
           op_result.u64 = MY_CAS_I(data.u64, src2_data.u64, src3_data.u64);
           data_ready = true;
+          // Lock operation
+          if(src2_data.u64 == 0 && src3_data.u64 == 1 && data.u64 == 0)
+            scord_thread_atomgeneric(thread, pI->get_atomic_scope(), false, effective_address);
           break;
         case S32_TYPE:
           op_result.s32 = MY_CAS_I(data.s32, src2_data.s32, src3_data.s32);
           data_ready = true;
+          // Lock operation
+          if(src2_data.s32 == 0 && src3_data.s32 == 1 && data.s32 == 0)
+            scord_thread_atomgeneric(thread, pI->get_atomic_scope(), false, effective_address);
           break;
         default:
           printf(
@@ -1317,15 +1327,24 @@ void atom_callback(const inst_t *inst, ptx_thread_info *thread) {
         case U32_TYPE:
           op_result.u32 = MY_EXCH(data.u32, src2_data.u32);
           data_ready = true;
+          // Unlock operation
+          if(src2_data.u32 == 0)
+            scord_thread_atomgeneric(thread, pI->get_atomic_scope(), true, effective_address);
           break;
         case B64_TYPE:
         case U64_TYPE:
           op_result.u64 = MY_EXCH(data.u64, src2_data.u64);
           data_ready = true;
+          // Unlock operation
+          if(src2_data.u64 == 0)
+            scord_thread_atomgeneric(thread, pI->get_atomic_scope(), true, effective_address);
           break;
         case S32_TYPE:
           op_result.s32 = MY_EXCH(data.s32, src2_data.s32);
           data_ready = true;
+          // Unlock operation
+          if(src2_data.s32 == 0)
+            scord_thread_atomgeneric(thread, pI->get_atomic_scope(), true, effective_address);
           break;
         default:
           printf(
@@ -1504,6 +1523,16 @@ void atom_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->m_last_memory_space = space;
   thread->m_last_dram_callback.function = atom_callback;
   thread->m_last_dram_callback.instruction = pI;
+
+  // Acquire lock on atomic variable and write
+  //scord_thread_atomgeneric(thread, pI->get_atomic_scope());
+  thread->m_ldst_data.memspace = thread->get_global_memory();
+  thread->m_ldst_data.addr = effective_address_final;
+  thread->m_ldst_data.thread = thread;
+  thread->m_ldst_data.pI = (ptx_instruction *)pI;
+
+  if(!SCORD_PERF && space == global_space)
+    scord_gmem_write(effective_address_final, 4, thread);
 }
 
 void bar_impl(const ptx_instruction *pIin, ptx_thread_info *thread) {
@@ -1605,6 +1634,7 @@ void bar_impl(const ptx_instruction *pIin, ptx_thread_info *thread) {
 
   thread->m_last_dram_callback.function = bar_callback;
   thread->m_last_dram_callback.instruction = pIin;
+  scord_thread_blkexecbarrier(thread);
 }
 
 void bfe_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -3355,6 +3385,155 @@ void decode_space(memory_space_t &space, ptx_thread_info *thread,
   }
 }
 
+// static
+void mem_read_w(memory_space *mem,
+        mem_addr_t addr, size_t length, void *data,
+        ptx_thread_info *thd, const ptx_instruction *pI )
+{
+#if 0
+    shader_core_ctx  *shctx = (shader_core_ctx *)thd->get_core();
+    ldst_unit *ldst = shctx->get_ldst_unit();
+    l1_cache *L1D = ldst->get_L1D();
+
+
+    ptx_instruction *pJ = (ptx_instruction *) pI;         /// XXX stripping const
+    pJ->set_ldst_pending(0, true, mem);
+    printf("   ~~~~~~~~~~~~~~~~~~~~~~~~  mem->read   ------------------ pending:%d\n",
+            pJ->get_ldst_pending(0));
+#endif
+
+
+#if 0
+    //mem->read_via_cache(addr,size/8,&data.s64);
+    mem->read(addr, length, data);             // XXX comment this out later
+#endif
+
+   // XXX alvin
+   //pI->m_ldst_memspace = mem;
+   assert(mem != NULL);
+   thd->m_ldst_data.memspace = mem;
+   thd->m_ldst_data.addr = addr;
+   thd->m_ldst_data.len = length;
+   thd->m_ldst_data.thread = thd;
+   thd->m_ldst_data.pI = (ptx_instruction *)pI;
+   printf_scord("\t### ld-defer DATA.u64: NIL  ##################\n");
+   if(!SCORD_PERF && pI->get_space() == global_space)
+      scord_gmem_read(addr, length, thd);
+}
+
+// static
+void mem_write_w(memory_space *mem,
+        mem_addr_t addr, size_t length, ptx_reg_t *data,
+        ptx_thread_info *thd, const ptx_instruction *pI )
+{
+#if 0
+    //mem->write_via_cache(addr,size/8,&data.s64,thread,pI);
+    //printf("   ~~~~~~~~~~~~~~~~~~~~~~~~  mem->write\n");
+    //mem->write(addr,length, data, thd, pI); // thd, pI are only needed for watch points
+    mem->write(addr,length, data, NULL, NULL); // thd, pI are only needed for watch points
+#endif
+   assert(mem != NULL);
+   thd->m_ldst_data.memspace = mem;
+   thd->m_ldst_data.addr = addr;
+   thd->m_ldst_data.len = length;
+   thd->m_ldst_data.thread = thd;
+   thd->m_ldst_data.pI = (ptx_instruction *)pI;
+   thd->m_ldst_data.wdata = (unsigned long long)(data->s64);  // only for st
+   if(!SCORD_PERF && pI->get_space() == global_space)
+      scord_gmem_write(addr, length, thd);
+}
+
+
+#if 1
+void x_read_from_device_memspace(memory_space *mem,
+        new_addr_type addr, unsigned length, unsigned int *data)
+{
+
+    if (mem == NULL) {
+        return;       // will have atleast 1 bubble inst hitting here
+    }
+    //extern gpgpu_sim* g_the_gpu; 
+//    memory_space *mem = g_the_gpu->get_global_memory();
+    mem->read(addr, length, data);
+}
+
+void x_write_to_device_memspace(memory_space *mem,
+        new_addr_type addr, unsigned length, unsigned int *data)
+{
+    if (mem == NULL) {
+        return;
+    }
+    // extern gpgpu_sim* g_the_gpu;
+    // memory_space *mem = g_the_gpu->get_global_memory();  //  gl / lc
+    // mem->write(addr, length, data, thd, pI); // XXX
+    mem->write(addr,length, data, NULL, NULL);     // thd, pI are only needed for watch points
+}
+#endif
+
+
+#if 1
+// this is the deferred execution
+void ld_exec_deferred(mem_fetch *mf, ptx_instruction *pI, ptx_thread_info *thread)
+{
+   printf_scord("  %s   mf: %x\n", __FUNCTION__, mf);
+
+   const operand_info &dst = pI->dst();
+   const operand_info &src1 = pI->src1();
+
+   unsigned type = pI->get_type();
+
+   ptx_reg_t src1_data = thread->get_operand_value(src1, dst, type, thread, 1);
+   ptx_reg_t data;
+   memory_space_t space = pI->get_space();
+   unsigned vector_spec = pI->get_vector();
+
+   memory_space *mem = NULL;
+   addr_t addr = src1_data.u32;
+
+   decode_space(space,thread,src1,mem,addr);
+
+   size_t size, sizebytes;
+   int t;
+   data.u64=0;
+   type_info_key::type_decode(type,size,t);
+   if (!vector_spec) {
+      //mem->read(addr,size/8,&data.s64);
+      if (mf->get_data_valid()) {
+         unsigned offset = addr & (128-1);  // XXX 128 is the cache line size
+         sizebytes = size/8;
+         unsigned char *buf = (unsigned char *)mf->get_data_array() + offset;
+         memcpy(&data.u64, buf, sizebytes);
+
+#if 0
+         ptx_reg_t data1;
+         data1.s64=0;
+         mem->read(addr,size/8,&data1.s64);     // for comparison between data, data1
+         if (memcmp(&data.s64, &data1.s64, size/8) == 0) {
+            printf("### data same as mem->read() ###\n");
+         } else {
+            printf("######### data mismatch from mem->read()  ########\n");
+         }
+         printf("\n");
+#endif
+
+      } else {
+         sizebytes = size/8;
+         mem->read(addr,sizebytes,&data.u64);
+         printf_scord("@@ no backing store -- readfrom MEMSPACE\n");
+      }
+      //bkpt_ld_st_dummy();
+
+      if( type == S16_TYPE || type == S32_TYPE )
+         sign_extend(data,size,dst);
+
+      printf_scord("@@   ld-final; set operand value DATA.u64: %lx\n", data.u64);
+      thread->set_operand_value(dst, data, type, thread, pI);
+   } else {
+      abort();
+   }
+}
+#endif
+
 void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
@@ -3376,10 +3555,28 @@ void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread) {
   data.u64 = 0;
   type_info_key::type_decode(type, size, t);
   if (!vector_spec) {
+#if 1
+    if(space.get_type() == shared_space)
+    {
+        mem->read(addr,size/8,&data.s64);
+        if( type == S16_TYPE || type == S32_TYPE ) 
+          sign_extend(data,size,dst);
+        thread->set_operand_value(dst,data, type, thread, pI);
+    }
+    else
+        mem_read_w(mem,addr,size/8,&data.s64,thread,pI);
+#endif
+
+#if 0
     mem->read(addr, size / 8, &data.s64);
     if (type == S16_TYPE || type == S32_TYPE) sign_extend(data, size, dst);
     thread->set_operand_value(dst, data, type, thread, pI);
+#else
+      // defer set_operand_value until perf-sim is done.
+      // TODO: should get value from perf sim
+#endif
   } else {
+    abort(); // for mem->write; XXX not implemented for vec
     ptx_reg_t data1, data2, data3, data4;
     mem->read(addr, size / 8, &data1.s64);
     mem->read(addr + size / 8, size / 8, &data2.s64);
@@ -4061,6 +4258,11 @@ void max_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
 void membar_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   // handled by timing simulator
+  if(!SCORD_PERF)
+    scord_thread_genericfence(thread, pI->m_membar_level);
+  if(SCORD_ENABLED)
+    scord_locks_enable(thread, pI->m_membar_level);
+  thread->m_ldst_data.thread = thread;
 }
 
 void min_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -5764,8 +5966,12 @@ void st_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
   if (!vector_spec) {
     data = thread->get_operand_value(src1, dst, type, thread, 1);
-    mem->write(addr, size / 8, &data.s64, thread, pI);
+    if(space.get_type() == shared_space)
+        mem->write(addr,size/8,&data.s64,thread,pI);
+    else
+        mem_write_w(mem,addr,size/8,&data,thread,pI);
   } else {
+    abort(); // XXX alvin
     if (vector_spec == V2_TYPE) {
       ptx_reg_t *ptx_regs = new ptx_reg_t[2];
       thread->get_vector_operand_values(src1, ptx_regs, 2);

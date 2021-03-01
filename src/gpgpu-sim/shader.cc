@@ -984,11 +984,52 @@ void shader_core_ctx::fetch() {
 }
 
 void exec_shader_core_ctx::func_exec_inst(warp_inst_t &inst) {
-  execute_warp_inst_t(inst);
-  if (inst.is_load() || inst.is_store()) {
-    inst.generate_mem_accesses();
-    // inst.print_m_accessq();
+  printf_scord("%s: from issue_warp\n", __FUNCTION__);
+  if(!SCORD_SILENT)
+  {
+    printf("@@ cyc%d;  s%u insn %p ", gpu_sim_cycle, this->get_sid(), &inst);
+    inst.print(stdout);
   }
+  //inst.m_ldst_unit = this->m_ldst_unit;   // for use by ld/st opcodes
+
+  execute_warp_inst_t(inst);
+
+  if(SCORD_PERF && inst.op == MEMORY_BARRIER_OP)
+  {
+    //scord_thread_genericfence(warp_id, pI->m_membar_level);
+    for(int i = 0; i < MAX_WARP_SIZE; ++i)
+    {
+      if(inst.active(i))
+      {
+          mem_fetch *mf = m_mem_fetch_allocator->alloc(scord_execid(inst.m_ldst_data[i].thread), GLOBAL_ACC_W, 0, true);
+          mf->is_scord_data() = true;
+          *mf->get_data_array() = inst.m_membar_level;
+          m_icnt->push(mf);
+          printf_scord("SCORD fence: Sending request for execid=%d\n", scord_execid(inst.m_ldst_data[i].thread));
+          break;
+      }
+    }
+  }
+
+  if( inst.is_load() || inst.is_store() )
+  {
+    printf_scord("@@ gen mem acc\n");
+    inst.generate_mem_accesses();
+    scord_get_execdata(&inst);
+#if 1
+    // XXX  XXX  XXX   -------- this is very important change
+    //m_ldst_unit->update_pending_store_reqs(&inst);
+    unsigned nma;
+    nma = inst.accessq_count();
+    if (inst.is_store()) {         // only for stores.
+      //for (int i = 0; i < nma; i++) {
+          //this->inc_store_req( inst.warp_id() );      // or  inst.inc_store_req() ??
+      //}
+      this->m_warp[inst.warp_id()].m_stores_outstanding_for_mb += nma;      // XXX
+    }
+    printf_scord("@@ generated %u mem_accesses\n", nma);
+#endif
+  }	
 }
 
 void shader_core_ctx::issue_warp(register_set &pipe_reg_set,
