@@ -470,6 +470,7 @@ class ptx_thread_info {
   ptx_warp_info *m_warp_info;
   ptx_cta_info *m_cta_info;
   ptx_reg_t m_last_set_operand_value;
+  ldst_data_alvin m_ldst_data;
 
  private:
   bool m_functionalSimulationMode;

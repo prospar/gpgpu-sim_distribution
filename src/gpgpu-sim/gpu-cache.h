@@ -1071,7 +1071,7 @@ class cache_stats {
   void clear();
   // Clear AerialVision cache stats after each window
   void clear_pw();
-  void inc_stats(int access_type, int access_outcome);
+  void inc_stats(mem_fetch *mf, int access_outcome);
   // Increment AerialVision cache stats
   void inc_stats_pw(int access_type, int access_outcome);
   void inc_fail_stats(int access_type, int fail_outcome);
@@ -1106,6 +1106,8 @@ class cache_stats {
   // AerialVision cache stats (per-window)
   std::vector<std::vector<unsigned long long> > m_stats_pw;
   std::vector<std::vector<unsigned long long> > m_fail_stats;
+  std::vector< unsigned > m_data_stats;
+  std::vector< unsigned > m_shadow_stats;
 
   unsigned long long m_cache_port_available_cycles;
   unsigned long long m_cache_data_port_busy_cycles;

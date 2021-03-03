@@ -2077,6 +2077,8 @@ void TrafficManager::DisplayStats(ostream & os) const {
 }
 
 void TrafficManager::DisplayOverallStats( ostream & os ) const {
+    return; // alvin
+    // FIXME: (mayant) Why do we not want the overall stats here?
 
     os << "====== Overall Traffic Statistics ======" << endl;
     for ( int c = 0; c < _classes; ++c ) {

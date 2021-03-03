@@ -767,6 +767,50 @@ enum cache_operator_type {
   CACHE_WRITE_THROUGH  // .wt
 };
 
+#if 1
+class ptx_instruction;
+struct cache_block_t;
+struct ldst_data_alvin {
+    memory_space *memspace;
+    unsigned addr; // type is really mem_addr_t
+    size_t len;
+    ptx_thread_info *thread;
+    ptx_instruction *pI;
+    // ptx_reg_t wdata;
+    unsigned long long wdata;
+    cache_block_t *location;
+    mutable bool rd;
+    ldst_data_alvin()
+    {
+        memspace = NULL;
+        addr = 0;
+        len = 0;
+        thread = NULL;
+        pI = NULL;
+        wdata = 0;
+        location = NULL;
+        rd = true;
+    }
+    
+    // Needed to store in set
+    bool operator < (const ldst_data_alvin &b) const
+    {
+        if (memspace != b.memspace)
+            return memspace < b.memspace;
+        if (addr != b.addr)
+            return addr < b.addr;
+        if (len != b.len)
+            return len < b.len;
+        if (thread != b.thread)
+            return thread < b.thread;
+        if (pI != b.pI)
+            return pI < b.pI;
+        return wdata < b.wdata;
+        
+    }
+};
+#endif
+
 class mem_access_t {
  public:
   mem_access_t(gpgpu_context *ctx) { init(ctx); }
@@ -796,6 +840,10 @@ class mem_access_t {
   void set_addr(new_addr_type addr) { m_addr = addr; }
   unsigned get_size() const { return m_req_size; }
   const active_mask_t &get_warp_mask() const { return m_warp_mask; }
+#if 1
+  //memory_space *get_mem_space() { return m_mem_space; }
+  std::set<ldst_data_alvin> *get_ldst_data() { return &m_ldst_data; }
+#endif
   bool is_write() const { return m_write; }
   enum mem_access_type get_type() const { return m_type; }
   mem_access_byte_mask_t get_byte_mask() const { return m_byte_mask; }
@@ -851,6 +899,10 @@ class mem_access_t {
   active_mask_t m_warp_mask;
   mem_access_byte_mask_t m_byte_mask;
   mem_access_sector_mask_t m_sector_mask;
+
+#if 1
+  std::set<ldst_data_alvin> m_ldst_data;
+#endif
 };
 
 class mem_fetch;
@@ -1135,6 +1187,8 @@ class warp_inst_t : public inst_t {
 
   bool isatomic() const { return m_isatomic; }
 
+  int get_atomic_scope() const { return m_atom_scope; }
+
   unsigned warp_size() const { return m_config->warp_size; }
 
   bool accessq_empty() const { return m_accessq.empty(); }
@@ -1195,8 +1249,12 @@ class warp_inst_t : public inst_t {
   // Jin: cdp support
  public:
   int m_is_cdp;
+  int m_membar_level;
+  int m_atom_scope;
+  int m_doatomic_dcount;
+  int m_atomic_delay;
   scord_execdata_t m_scord_md;
-
+  class ldst_data_alvin m_ldst_data[MAX_WARP_SIZE];
 };
 
 void move_warp(warp_inst_t *&dst, warp_inst_t *&src);

@@ -1169,7 +1169,7 @@ class ptx_instruction : public warp_inst_t {
   int m_vector_spec;
   int m_atomic_spec;
   enum vote_mode_t m_vote_mode;
-  int m_membar_level;
+  // int m_membar_level;
   int m_instr_mem_index;  // index into m_instr_mem array
   unsigned m_inst_size;   // bytes
 

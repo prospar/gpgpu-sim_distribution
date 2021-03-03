@@ -601,6 +601,8 @@ cache_stats::cache_stats() {
     m_stats_pw[i].resize(NUM_CACHE_REQUEST_STATUS, 0);
     m_fail_stats[i].resize(NUM_CACHE_RESERVATION_FAIL_STATUS, 0);
   }
+  m_data_stats.resize(NUM_CACHE_REQUEST_STATUS);
+  m_shadow_stats.resize(NUM_CACHE_REQUEST_STATUS);
   m_cache_port_available_cycles = 0;
   m_cache_data_port_busy_cycles = 0;
   m_cache_fill_port_busy_cycles = 0;
@@ -614,6 +616,10 @@ void cache_stats::clear() {
     std::fill(m_stats[i].begin(), m_stats[i].end(), 0);
     std::fill(m_fail_stats[i].begin(), m_fail_stats[i].end(), 0);
   }
+
+  std::fill(m_data_stats.begin(), m_data_stats.end(), 0);
+  std::fill(m_shadow_stats.begin(), m_shadow_stats.end(), 0);
+
   m_cache_port_available_cycles = 0;
   m_cache_data_port_busy_cycles = 0;
   m_cache_fill_port_busy_cycles = 0;
@@ -628,10 +634,11 @@ void cache_stats::clear_pw() {
   }
 }
 
-void cache_stats::inc_stats(int access_type, int access_outcome) {
+void cache_stats::inc_stats(mem_fetch *mf, int access_outcome) {
   ///
   /// Increment the stat corresponding to (access_type, access_outcome) by 1.
   ///
+  int access_type = mf->get_access_type();
   if (!check_valid(access_type, access_outcome))
     assert(0 && "Unknown cache access type or access outcome");
 
@@ -731,6 +738,12 @@ cache_stats cache_stats::operator+(const cache_stats &cs) {
           m_fail_stats[type][status] + cs(type, status, true);
     }
   }
+
+  for (unsigned type = 0; type < NUM_CACHE_REQUEST_STATUS; ++type) {
+      ret.m_data_stats[type] = m_data_stats[type] + cs.m_data_stats[type];
+      ret.m_shadow_stats[type] = m_shadow_stats[type] + cs.m_shadow_stats[type];
+  }
+
   ret.m_cache_port_available_cycles =
       m_cache_port_available_cycles + cs.m_cache_port_available_cycles;
   ret.m_cache_data_port_busy_cycles =
@@ -756,6 +769,12 @@ cache_stats &cache_stats::operator+=(const cache_stats &cs) {
       m_fail_stats[type][status] += cs(type, status, true);
     }
   }
+
+  for (unsigned type = 0; type < NUM_CACHE_REQUEST_STATUS; ++type) {
+      m_data_stats[type] += cs.m_data_stats[type];
+      m_shadow_stats[type] += cs.m_shadow_stats[type];
+  }
+
   m_cache_port_available_cycles += cs.m_cache_port_available_cycles;
   m_cache_data_port_busy_cycles += cs.m_cache_data_port_busy_cycles;
   m_cache_fill_port_busy_cycles += cs.m_cache_fill_port_busy_cycles;
@@ -783,6 +802,22 @@ void cache_stats::print_stats(FILE *fout, const char *cache_name) const {
         total_access[type] += m_stats[type][status];
     }
   }
+
+  for (unsigned status = 0; status < NUM_CACHE_REQUEST_STATUS; ++status) {
+      fprintf(fout, "\t%s_data[%s] = %u\n",
+              m_cache_name.c_str(),
+              cache_request_status_str((enum cache_request_status) status),
+              m_data_stats[status]);
+  }
+
+
+  for (unsigned status = 0; status < NUM_CACHE_REQUEST_STATUS; ++status) {
+      fprintf(fout, "\t%s_shadow[%s] = %u\n",
+              m_cache_name.c_str(),
+              cache_request_status_str((enum cache_request_status) status),
+              m_shadow_stats[status]);
+  }
+
   for (unsigned type = 0; type < NUM_MEM_ACCESS_TYPE; ++type) {
     if (total_access[type] > 0)
       fprintf(fout, "\t%s[%s][%s] = %u\n", m_cache_name.c_str(),
@@ -860,6 +895,20 @@ void cache_stats::get_sub_stats(struct cache_sub_stats &css) const {
 
       if (status == RESERVATION_FAIL) t_css.res_fails += m_stats[type][status];
     }
+  }
+
+  for (unsigned status = 0; status < NUM_CACHE_REQUEST_STATUS; ++status) {
+      if (status == HIT || status == MISS || status == SECTOR_MISS || status == HIT_RESERVED)
+      {
+          t_css.data_accesses += m_data_stats[status];
+          t_css.shadow_accessses += m_shadow_stats[status];
+      }
+
+      if (status == MISS || status == SECTOR_MISS)
+      {
+          t_css.data_misses += m_data_stats[status];
+          t_css.shadow_misses += m_shadow_stats[status];
+      }
   }
 
   t_css.port_available_cycles = m_cache_port_available_cycles;
@@ -1617,8 +1666,7 @@ enum cache_request_status read_only_cache::access(
     m_stats.inc_fail_stats(mf->get_access_type(), LINE_ALLOC_FAIL);
   }
 
-  m_stats.inc_stats(mf->get_access_type(),
-                    m_stats.select_stats_status(status, cache_status));
+  m_stats.inc_stats(mf, m_stats.select_stats_status(status, cache_status));
   m_stats.inc_stats_pw(mf->get_access_type(),
                        m_stats.select_stats_status(status, cache_status));
   return cache_status;
@@ -1684,8 +1732,7 @@ enum cache_request_status data_cache::access(new_addr_type addr, mem_fetch *mf,
       m_tag_array->probe(block_addr, cache_index, mf, true);
   enum cache_request_status access_status =
       process_tag_probe(wr, probe_status, addr, cache_index, mf, time, events);
-  m_stats.inc_stats(mf->get_access_type(),
-                    m_stats.select_stats_status(probe_status, access_status));
+  m_stats.inc_stats(mf, m_stats.select_stats_status(probe_status, access_status));
   m_stats.inc_stats_pw(mf->get_access_type(), m_stats.select_stats_status(
                                                   probe_status, access_status));
   return access_status;
@@ -1748,8 +1795,7 @@ enum cache_request_status tex_cache::access(new_addr_type addr, mem_fetch *mf,
     // the value *will* *be* in the cache already
     cache_status = HIT_RESERVED;
   }
-  m_stats.inc_stats(mf->get_access_type(),
-                    m_stats.select_stats_status(status, cache_status));
+  m_stats.inc_stats(mf, m_stats.select_stats_status(status, cache_status));
   m_stats.inc_stats_pw(mf->get_access_type(),
                        m_stats.select_stats_status(status, cache_status));
   return cache_status;
