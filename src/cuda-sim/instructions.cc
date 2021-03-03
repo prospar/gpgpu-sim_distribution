@@ -3499,21 +3499,21 @@ void ld_exec_deferred(mem_fetch *mf, ptx_instruction *pI, ptx_thread_info *threa
    if (!vector_spec) {
       //mem->read(addr,size/8,&data.s64);
       if (mf->get_data_valid()) {
-         unsigned offset = addr & (128-1);  // XXX 128 is the cache line size
-         sizebytes = size/8;
-         unsigned char *buf = (unsigned char *)mf->get_data_array() + offset;
-         memcpy(&data.u64, buf, sizebytes);
+        unsigned offset = addr & (128-1);  // XXX 128 is the cache line size
+        sizebytes = size/8;
+        unsigned char *buf = (unsigned char *)mf->get_data_array() + offset;
+        memcpy(&data.u64, buf, sizebytes);
 
 #if 0
-         ptx_reg_t data1;
-         data1.s64=0;
-         mem->read(addr,size/8,&data1.s64);     // for comparison between data, data1
-         if (memcmp(&data.s64, &data1.s64, size/8) == 0) {
-            printf("### data same as mem->read() ###\n");
-         } else {
-            printf("######### data mismatch from mem->read()  ########\n");
-         }
-         printf("\n");
+      ptx_reg_t data1;
+      data1.s64=0;
+      mem->read(addr,size/8,&data1.s64);     // for comparison between data, data1
+      if (memcmp(&data.s64, &data1.s64, size/8) == 0) {
+        printf("### data same as mem->read() ###\n");
+      } else {
+        printf("######### data mismatch from mem->read()  ########\n");
+      }
+      printf("\n");
 #endif
 
       } else {

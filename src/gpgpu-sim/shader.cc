@@ -1974,6 +1974,32 @@ void ldst_unit::L1_latency_queue_cycle() {
         assert(!read_sent);
         l1_latency_queue[j][0] = NULL;
         if (mf_next->get_inst().is_load()) {
+        printf_scord("  @@ cache hit is load\n");
+        // Generate mem_fetch to send info to SCORD on read hits
+        if(SCORD_PERF && mf_next->has_scord_metadata())
+        {
+          if(m_icnt->full(WRITE_PACKET_SIZE + SCORD_PACKET_SIZE, mf_next->get_inst().isatomic()))
+              return;
+          
+          const mem_access_t scord_access(GLOBAL_ACC_R, mf_next->get_addr(), 0, mf_next->is_write(), 
+                  mf_next->get_access_warp_mask(), mf_next->get_access_byte_mask(), mf_next->get_access_sector_mask(), 
+                  mf_next->get_ldst_data());
+          mem_fetch *scord_mf = m_mf_allocator->alloc(mf_next->get_inst(), scord_access);
+          scord_mf->is_scord_data() = true;
+          scord_mf->has_scord_metadata() = true;
+          scord_mf->memspace = mf_next->memspace;
+          memcpy(scord_mf->get_scord_metadata(), mf_next->get_scord_metadata(), SCORD_PACKET_SIZE);
+          
+          m_icnt->push(scord_mf);
+          printf_scord("scord read_hit: Generating dup mf (%x) for detector\n", scord_mf);
+        }
+#if 1
+        // XXX
+        // read data into mf,
+        // mf is load,  so do  ld_exec_deferred
+        do_deferred_ld_exec_wrapper(mf_next);
+#endif
+
           for (unsigned r = 0; r < MAX_OUTPUT_VALUES; r++)
             if (mf_next->get_inst().out[r] > 0) {
               assert(m_pending_writes[mf_next->get_inst().warp_id()]
@@ -2091,7 +2117,7 @@ bool ldst_unit::memory_cycle(warp_inst_t &inst,
     // bypass L1 cache
     unsigned control_size =
         inst.is_store() ? WRITE_PACKET_SIZE : READ_PACKET_SIZE;
-    unsigned size = access.get_size() + control_size;
+    unsigned size = access.get_size() + control_size + (SCORD_PERF && inst.is_ldst() && inst.space == global_space ? SCORD_PACKET_SIZE : 0);
     // printf("Interconnect:Addr: %x, size=%d\n",access.get_addr(),size);
     if (m_icnt->full(size, inst.is_store() || inst.isatomic())) {
       stall_cond = ICNT_RC_FAIL;
@@ -2100,6 +2126,43 @@ bool ldst_unit::memory_cycle(warp_inst_t &inst,
           m_mf_allocator->alloc(inst, access,
                                 m_core->get_gpu()->gpu_sim_cycle +
                                     m_core->get_gpu()->gpu_tot_sim_cycle);
+      
+      if (inst.is_store()) {
+          for(auto ldst = mf->get_ldst_data()->begin(); ldst != mf->get_ldst_data()->end(); ++ldst)
+          {
+              unsigned sizebytes = ldst->len;
+              int offset = (ldst->addr & 127);
+              memcpy((unsigned char *)mf->get_data_array() + offset, &(ldst->wdata),
+                      //sizeof(mf->get_ldst_data()->wdata));
+                      sizebytes); // forcing it to 4bytes.  FIXME
+              mf->set_data_size(sizebytes);
+              for(int i = 0 ; i < sizebytes; ++i)
+                  mf->set_data_used(i + offset);
+              mf->set_data_valid(true); // XXX
+              mf->memspace = ldst->memspace;
+              printf_scord("@@ ldst_unit::memory_cycle  mf created for the ld/st; addr: %x data:%x size: %d\n", ldst->addr, ldst->wdata, ldst->len);
+          }
+          mf->print_data_array();
+          
+          // XXX Unsure where to keep this
+          unsigned nma = 1;
+
+          // re-adjust the pending_count_for_mb XXX
+          unsigned *sofm = &m_core->m_warp[inst.warp_id()].m_stores_outstanding_for_mb;
+          assert(*sofm >= nma);
+          *sofm -= nma;
+      }
+      for(auto ldst = mf->get_ldst_data()->begin(); ldst != mf->get_ldst_data()->end(); ++ldst)
+      {
+          mf->memspace = ldst->memspace; 
+          break;
+      }
+      if(SCORD_PERF && inst.is_ldst() && inst.space == global_space)
+      {
+          printf_scord("SCORD BypassL1D: Adding metadata to mf (%x)\n", mf);
+          scord_create_packet_metadata(inst.m_scord_md, mf);
+      }
+
       m_icnt->push(mf);
       inst.accessq_pop_back();
       // inst.clear_active( access.get_warp_mask() );
