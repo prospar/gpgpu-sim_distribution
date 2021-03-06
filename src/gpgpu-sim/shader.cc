@@ -77,7 +77,7 @@ std::list<unsigned> shader_core_ctx::get_regs_written(const inst_t &fvt) const {
 void exec_shader_core_ctx::create_shd_warp() {
   m_warp.resize(m_config->max_warps_per_shader);
   for (unsigned k = 0; k < m_config->max_warps_per_shader; ++k) {
-    m_warp[k] = new shd_warp_t(this, m_config->warp_size);
+    m_warp[k] = new shd_warp_t((shader_core_ctx*) this, m_config->warp_size);
   }
 }
 
@@ -1001,7 +1001,7 @@ void exec_shader_core_ctx::func_exec_inst(warp_inst_t &inst) {
     {
       if(inst.active(i))
       {
-          mem_fetch *mf = m_mem_fetch_allocator->alloc(scord_execid(inst.m_ldst_data[i].thread), GLOBAL_ACC_W, 0, true);
+          mem_fetch *mf = m_mem_fetch_allocator->alloc(scord_execid(inst.m_ldst_data[i].thread), GLOBAL_ACC_W, 0, true, m_gpu->gpu_tot_sim_cycle + m_gpu->gpu_sim_cycle);
           mf->is_scord_data() = true;
           *mf->get_data_array() = inst.m_membar_level;
           m_icnt->push(mf);
@@ -1025,7 +1025,7 @@ void exec_shader_core_ctx::func_exec_inst(warp_inst_t &inst) {
       //for (int i = 0; i < nma; i++) {
           //this->inc_store_req( inst.warp_id() );      // or  inst.inc_store_req() ??
       //}
-      this->m_warp[inst.warp_id()].m_stores_outstanding_for_mb += nma;      // XXX
+      this->m_warp[inst.warp_id()]->m_stores_outstanding_for_mb += nma;      // XXX
     }
     printf_scord("@@ generated %u mem_accesses\n", nma);
 #endif
@@ -1728,6 +1728,21 @@ void shader_core_ctx::execute() {
   }
 }
 
+void ld_exec_deferred(mem_fetch *mf, ptx_instruction *pI, ptx_thread_info *thread);
+
+static void do_deferred_ld_exec_wrapper(mem_fetch *mf)
+{
+    if (mf && mf->get_inst().is_load()) {
+        if (mf->get_ldst_data()->size() != 0) {
+            printf_scord("MF %x values:\n", mf);
+            mf->print_data_array();
+            for (std::set<ldst_data_alvin>::iterator i = mf->get_ldst_data()->begin(); i != mf->get_ldst_data()->end(); ++i) {
+                ld_exec_deferred(mf, i->pI, i->thread);
+            }
+        }
+    }
+}
+
 void ldst_unit::print_cache_stats(FILE *fp, unsigned &dl1_accesses,
                                   unsigned &dl1_misses) {
   if (m_L1D) {
@@ -1860,6 +1875,7 @@ mem_stage_stall_type ldst_unit::process_cache_access(
     assert(!read_sent);
     inst.accessq_pop_back();
     if (inst.is_load()) {
+        do_deferred_ld_exec_wrapper(mf);
       for (unsigned r = 0; r < MAX_OUTPUT_VALUES; r++)
         if (inst.out[r] > 0) m_pending_writes[inst.warp_id()][inst.out[r]]--;
     }
@@ -1984,7 +2000,7 @@ void ldst_unit::L1_latency_queue_cycle() {
           const mem_access_t scord_access(GLOBAL_ACC_R, mf_next->get_addr(), 0, mf_next->is_write(), 
                   mf_next->get_access_warp_mask(), mf_next->get_access_byte_mask(), mf_next->get_access_sector_mask(), 
                   mf_next->get_ldst_data());
-          mem_fetch *scord_mf = m_mf_allocator->alloc(mf_next->get_inst(), scord_access);
+          mem_fetch *scord_mf = m_mf_allocator->alloc(mf_next->get_inst(), scord_access, m_gpu->gpu_tot_sim_cycle + m_gpu->gpu_sim_cycle);
           scord_mf->is_scord_data() = true;
           scord_mf->has_scord_metadata() = true;
           scord_mf->memspace = mf_next->memspace;
@@ -2148,7 +2164,7 @@ bool ldst_unit::memory_cycle(warp_inst_t &inst,
           unsigned nma = 1;
 
           // re-adjust the pending_count_for_mb XXX
-          unsigned *sofm = &m_core->m_warp[inst.warp_id()].m_stores_outstanding_for_mb;
+          unsigned *sofm = &m_core->m_warp[inst.warp_id()]->m_stores_outstanding_for_mb;
           assert(*sofm >= nma);
           *sofm -= nma;
       }
@@ -2591,6 +2607,8 @@ void ldst_unit::writeback() {
         }
         break;
       case 3:  // global/local
+        
+        // TODO: MAYANT: Copy this from ScoRD tomorrow~
         if (m_next_global) {
           m_next_wb = m_next_global->get_inst();
           if (m_next_global->isatomic()) {
@@ -2607,6 +2625,7 @@ void ldst_unit::writeback() {
         if (m_L1D && m_L1D->access_ready()) {
           mem_fetch *mf = m_L1D->next_access();
           m_next_wb = mf->get_inst();
+          do_deferred_ld_exec_wrapper(mf);
           delete mf;
           serviced_client = next_client;
         }

@@ -1184,10 +1184,27 @@ void baseline_cache::send_read_request(new_addr_type addr,
     // Generate mem_fetch to send info to SCORD on read miss
     if(SCORD_PERF && mf->has_scord_metadata() && is_l1_cache())
     {
-      const mem_access_t scord_access(GLOBAL_ACC_R, mf->get_addr(), 0, mf->is_write(), 
-        mf->get_access_warp_mask(), mf->get_access_byte_mask(), mf->get_access_sector_mask(), 
-        mf->get_ldst_data());
-      mem_fetch *scord_mf = new mem_fetch(scord_access, &mf->get_inst(), (unsigned)8, mf->get_wid(), mf->get_sid(), mf->get_tpc(), mf->get_mem_config());
+      const mem_access_t scord_access(
+              GLOBAL_ACC_R, 
+              mf->get_addr(), 0, mf->is_write(),
+              mf->get_access_warp_mask(), 
+              mf->get_access_byte_mask(), 
+              mf->get_access_sector_mask(), 
+              mf->get_ldst_data()
+      );
+      
+      // TODO: MAYANT: mem_fetch needs a gpusimcycle
+      mem_fetch *scord_mf = new mem_fetch(
+              scord_access, 
+              &mf->get_inst(), 
+              (unsigned) 8, 
+              mf->get_wid(), 
+              mf->get_sid(), 
+              mf->get_tpc(), 
+              mf->get_mem_config(),
+              m_gpu->gpu_tot_sim_cycle + m_gpu->gpu_sim_cycle, NULL, mf
+      );
+
       scord_mf->is_scord_data() = true;
       scord_mf->has_scord_metadata() = true;
       scord_mf->memspace = mf->memspace;

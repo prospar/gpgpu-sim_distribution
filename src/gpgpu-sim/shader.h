@@ -2214,7 +2214,11 @@ class shader_core_ctx : public core_t {
   int m_last_warp_fetched;
 
   // decode/dispatch
+// NOTE: MAYANT: Had to make this public to make ldst_unit::memory_cycle() happy
+public:
   std::vector<shd_warp_t *> m_warp;  // per warp information array
+
+protected:
   barrier_set_t m_barriers;
   ifetch_buffer_t m_inst_fetch_buffer;
   std::vector<register_set> m_pipeline_reg;

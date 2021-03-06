@@ -580,6 +580,10 @@ class gpgpu_t {
     return m_surf_mem;
   }
 
+  unsigned long long get_allocated_mem_size() {
+      return m_dev_malloc - GLOBAL_HEAP_START;
+  } 
+
   void gpgpu_ptx_sim_bindTextureToArray(const struct textureReference *texref,
                                         const struct cudaArray *array);
   void gpgpu_ptx_sim_bindNameToTexture(const char *name,
@@ -836,6 +840,25 @@ class mem_access_t {
     m_write = wr;
   }
 
+  mem_access_t(mem_access_type type, new_addr_type address, unsigned size,
+               bool wr, const active_mask_t &active_mask,
+               const mem_access_byte_mask_t &byte_mask,
+               const mem_access_sector_mask_t &sector_mask,
+               std::set<ldst_data_alvin> *ldst)
+      : m_warp_mask(active_mask),
+        m_byte_mask(byte_mask),
+        m_sector_mask(sector_mask) {
+    init();
+    m_type = type;
+    m_addr = address;
+    m_req_size = size;
+    m_write = wr;
+
+    for (std::set<ldst_data_alvin>::iterator i = ldst->begin(); i != ldst->end(); ++i) {
+        m_ldst_data.insert(*i);
+    }
+  }
+
   new_addr_type get_addr() const { return m_addr; }
   void set_addr(new_addr_type addr) { m_addr = addr; }
   unsigned get_size() const { return m_req_size; }
@@ -890,6 +913,7 @@ class mem_access_t {
 
  private:
   void init(gpgpu_context *ctx);
+  void init();
 
   unsigned m_uid;
   new_addr_type m_addr;  // request address
@@ -900,7 +924,7 @@ class mem_access_t {
   mem_access_byte_mask_t m_byte_mask;
   mem_access_sector_mask_t m_sector_mask;
 
-#if 1
+#if 1 
   std::set<ldst_data_alvin> m_ldst_data;
 #endif
 };
@@ -982,6 +1006,11 @@ class inst_t {
     return (op == STORE_OP || op == TENSOR_CORE_STORE_OP ||
             memory_op == memory_store);
   }
+
+  bool is_ldst() const {
+      return (is_load() || is_store());
+  }
+
   unsigned get_num_operands() const { return num_operands; }
   unsigned get_num_regs() const { return num_regs; }
   void set_num_regs(unsigned num) { num_regs = num; }

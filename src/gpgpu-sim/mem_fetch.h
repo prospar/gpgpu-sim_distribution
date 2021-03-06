@@ -59,6 +59,10 @@ class mem_fetch {
             const memory_config *config, unsigned long long cycle,
             mem_fetch *original_mf = NULL, mem_fetch *original_wr_mf = NULL);
   ~mem_fetch();
+  mem_fetch(const mem_access_t &access, const warp_inst_t *inst,
+            unsigned ctrl_size, unsigned wid, unsigned sid, unsigned tpc,
+            const memory_config *config, 
+            mem_fetch *original_mf = NULL, mem_fetch *original_wr_mf = NULL);
 
   void set_status(enum mem_fetch_status status, unsigned long long cycle);
   void set_reply() {

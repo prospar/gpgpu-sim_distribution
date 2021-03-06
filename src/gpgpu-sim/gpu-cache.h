@@ -99,6 +99,9 @@ struct cache_event {
 
 const char *cache_request_status_str(enum cache_request_status status);
 
+// NOTE: MAYANT: This is used in a couple of printf_scord statements
+extern unsigned long long gpu_sim_cycle;
+
 struct cache_block_t {
   cache_block_t() {
     m_tag = 0;
@@ -850,6 +853,8 @@ class tag_array {
   void add_pending_line(mem_fetch *mf);
   void remove_pending_line(mem_fetch *mf);
 
+  int get_core_id() { return m_core_id; }
+
  protected:
   // This constructor is intended for use only from derived classes that wish to
   // avoid unnecessary memory allocation that takes place in the
@@ -955,6 +960,11 @@ struct cache_sub_stats {
   unsigned long long pending_hits;
   unsigned long long res_fails;
 
+  unsigned data_accesses;
+  unsigned data_misses;
+  unsigned shadow_accessses;
+  unsigned shadow_misses;
+
   unsigned long long port_available_cycles;
   unsigned long long data_port_busy_cycles;
   unsigned long long fill_port_busy_cycles;
@@ -965,6 +975,10 @@ struct cache_sub_stats {
     misses = 0;
     pending_hits = 0;
     res_fails = 0;
+    data_accesses = 0;
+    data_misses = 0;
+    shadow_accessses = 0;
+    shadow_misses = 0;
     port_available_cycles = 0;
     data_port_busy_cycles = 0;
     fill_port_busy_cycles = 0;
@@ -977,6 +991,10 @@ struct cache_sub_stats {
     misses += css.misses;
     pending_hits += css.pending_hits;
     res_fails += css.res_fails;
+    data_accesses += css.data_accesses;
+    data_misses += css.data_misses;
+    shadow_accessses += css.shadow_accessses;
+    shadow_misses += css.shadow_misses;
     port_available_cycles += css.port_available_cycles;
     data_port_busy_cycles += css.data_port_busy_cycles;
     fill_port_busy_cycles += css.fill_port_busy_cycles;
@@ -992,6 +1010,12 @@ struct cache_sub_stats {
     ret.misses = misses + cs.misses;
     ret.pending_hits = pending_hits + cs.pending_hits;
     ret.res_fails = res_fails + cs.res_fails;
+
+    ret.data_accesses = data_accesses + cs.data_accesses;
+    ret.data_misses = data_accesses + cs.data_misses;
+    ret.shadow_accessses = shadow_accessses + cs.shadow_accessses;
+    ret.shadow_misses = shadow_misses + cs.shadow_misses;
+
     ret.port_available_cycles =
         port_available_cycles + cs.port_available_cycles;
     ret.data_port_busy_cycles =
@@ -1219,6 +1243,9 @@ class baseline_cache : public cache_t {
     m_tag_array->fill(addr, time, mask);
   }
 
+  int get_core_id() { return m_tag_array->get_core_id(); }
+  bool is_l1_cache() { return (get_core_id() != -1) ? true : false; }
+
  protected:
   // Constructor that can be used by derived classes with custom tag arrays
   baseline_cache(const char *name, cache_config &config, int core_id,
@@ -1239,6 +1266,8 @@ class baseline_cache : public cache_t {
   std::list<mem_fetch *> m_miss_queue;
   enum mem_fetch_status m_miss_queue_status;
   mem_fetch_interface *m_memport;
+
+  class gpgpu_sim *m_gpu;
 
   struct extra_mf_fields {
     extra_mf_fields() { m_valid = false; }
@@ -1434,7 +1463,6 @@ class data_cache : public baseline_cache {
                                     // (e.g., L1 or L2)
   mem_access_type
       m_wrbk_type;  // Specifies type of writeback request (e.g., L1 or L2)
-  class gpgpu_sim *m_gpu;
 
   //! A general function that takes the result of a tag_array probe
   //  and performs the correspding functions based on the cache configuration

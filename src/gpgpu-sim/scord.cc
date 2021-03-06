@@ -42,6 +42,7 @@
 #include "../abstract_hardware_model.h"
 #include "../cuda-sim/ptx_sim.h"
 #include "../cuda-sim/cuda-sim.h"
+#include "../../libcuda/gpgpu_context.h"
 #include "../option_parser.h"
 
 #define ID_INVALID    ((unsigned)-1)
@@ -51,6 +52,8 @@ static std::map<int, scord_execdata_t> execdata;
 
 scord_detection_logic gscord_detection;
 scord_request_generator gscord_request;
+
+static gpgpu_sim *p_gpu;
 
 #define EXPORT  /* to mark exported symbols */
 
@@ -163,7 +166,10 @@ void scord_kernel_restart(gpgpu_t *gpu)
         SCORD_PERF = 0;
     
     if(SCORD_PERF)
+    {
         gscord_request.reset(gpu);
+        p_gpu = (gpgpu_sim*) gpu;
+    }
     else
         initdone = false;
 }
@@ -666,7 +672,7 @@ void scord_detection_logic::print_stats()
         for(std::map<int, int>::iterator r = races.begin(); r != races.end(); ++r)
         {
             printf("SCORD Race races=%d insn=", r->second);
-            ptx_print_insn(r->first, stdout);
+            p_gpu->gpgpu_ctx->func_sim->ptx_print_insn(r->first, stdout);
             printf("\n");
             for(std::map<std::string, int>::iterator it = race_types[r->first].begin(); it != race_types[r->first].end(); ++it)
             {
@@ -819,7 +825,7 @@ void scord_request_generator::generate_mem_request(mem_fetch **mf_ptr, memory_su
             // Memfetch does not exist, create new one
             else
             {
-                const mem_access_t ma = mem_access_t(GLOBAL_ACC_R, addr & ~(127), 128, false);
+                const mem_access_t ma = mem_access_t(GLOBAL_ACC_R, addr & ~(127), 128, false, p_gpu->gpgpu_ctx);
                 mf_req = new mem_fetch(ma, &mf->get_inst(), mf->get_ctrl_size(), mf->get_wid(), mf->get_sid(), mf->get_tpc(), mf->get_mem_config());
                 mf_req->memspace = mf->memspace;
                 mem_reqs[addr / 128] = mf_req;
@@ -878,7 +884,7 @@ mem_fetch* scord_request_generator::process_mem_requests(memory_sub_partition **
             }
             --cur_reqs;
             printf_scord("SCORD process_mem_req: Received mf (%x)\n", mf);
-            const mem_access_t ma = mem_access_t(GLOBAL_ACC_W, mf->get_addr(), 0, true);
+            const mem_access_t ma = mem_access_t(GLOBAL_ACC_W, mf->get_addr(), 0, true, p_gpu->gpgpu_ctx);
             mem_fetch *mf_req = new mem_fetch(ma, NULL, mf->get_ctrl_size(), mf->get_wid(), mf->get_sid(), mf->get_tpc(), mf->get_mem_config());
             mf_req->memspace = mf->memspace;
             for(auto i = mf->get_ldst_data()->begin(); i != mf->get_ldst_data()->end(); ++i)
