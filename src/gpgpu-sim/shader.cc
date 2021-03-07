@@ -2000,7 +2000,7 @@ void ldst_unit::L1_latency_queue_cycle() {
           const mem_access_t scord_access(GLOBAL_ACC_R, mf_next->get_addr(), 0, mf_next->is_write(), 
                   mf_next->get_access_warp_mask(), mf_next->get_access_byte_mask(), mf_next->get_access_sector_mask(), 
                   mf_next->get_ldst_data());
-          mem_fetch *scord_mf = m_mf_allocator->alloc(mf_next->get_inst(), scord_access, m_gpu->gpu_tot_sim_cycle + m_gpu->gpu_sim_cycle);
+          mem_fetch *scord_mf = m_mf_allocator->alloc(mf_next->get_inst(), scord_access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle);
           scord_mf->is_scord_data() = true;
           scord_mf->has_scord_metadata() = true;
           scord_mf->memspace = mf_next->memspace;

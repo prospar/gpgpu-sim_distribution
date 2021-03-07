@@ -282,6 +282,7 @@ class shd_warp_t {
  public:
   unsigned int m_cdp_latency;
   bool m_cdp_dummy;
+  unsigned m_stores_outstanding_for_mb;
 };
 
 inline unsigned hw_tid_from_wid(unsigned wid, unsigned warp_size, unsigned i) {
