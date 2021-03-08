@@ -26,6 +26,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//TODO: do_atomic_block missing. And many other functions pertaining to this are missing in the new GPGPUSim
+
 #include "abstract_hardware_model.h"
 #include <sys/stat.h>
 #include <algorithm>
