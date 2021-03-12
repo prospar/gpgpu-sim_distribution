@@ -176,6 +176,24 @@ tag_array::tag_array(cache_config &config, int core_id, int type_id,
   init(core_id, type_id);
 }
 
+unsigned long *alvin_malloc(int line_sz) {
+  static int called = 0;
+  called++;
+  // printf("------------------------------------ call:%d allocing %d\n",
+  // called, line_sz);
+  unsigned long *data;
+  data = (unsigned long *)malloc(line_sz);
+  if (data == NULL) {
+    abort();
+  }
+  // printf(".");
+  if ((called % 1000) == 0) {
+    printf_scord("---------------- %s: called %d times\n", __FUNCTION__,
+                 called);
+  }
+  return data;
+}
+
 void tag_array::update_cache_parameters(cache_config &config) {
   m_config = config;
 }
@@ -353,9 +371,11 @@ enum cache_request_status tag_array::access(new_addr_type addr, unsigned time,
       if (m_config.m_alloc_policy == ON_MISS) {
         if (m_lines[idx]->is_modified_line()) {
           wb = true;
+          printf_scord(" --- evicted cache line idx:%d\n", idx);
           evicted.set_info(m_lines[idx]->m_block_addr,
                            m_lines[idx]->get_modified_size());
         }
+        printf_scord(" --- allocate cache line idx:%d\n", idx);
         m_lines[idx]->allocate(m_config.tag(addr), m_config.block_addr(addr),
                                time, mf->get_access_sector_mask());
       }
@@ -414,10 +434,18 @@ void tag_array::fill(unsigned index, unsigned time, mem_fetch *mf) {
 void tag_array::flush() {
   if (!is_used) return;
 
+  printf_scord("@@   --------------------------- TA flush\n");
   for (unsigned i = 0; i < m_config.get_num_lines(); i++)
     if (m_lines[i]->is_modified_line()) {
+      // NOTE: MAYANT: They don't support sector caches? :o
+#if 1
+      m_lines[i]->set_status(INVALID, -1);
+      m_lines[i]->reset_modified();
+#else
+      // XXX this is commented out - because not supporting sector cache
       for (unsigned j = 0; j < SECTOR_CHUNCK_SIZE; j++)
         m_lines[i]->set_status(INVALID, mem_access_sector_mask_t().set(j));
+#endif
     }
 
   is_used = false;
@@ -426,9 +454,17 @@ void tag_array::flush() {
 void tag_array::invalidate() {
   if (!is_used) return;
 
-  for (unsigned i = 0; i < m_config.get_num_lines(); i++)
+  printf_scord("@@   --------------------------- TA invalidate\n");
+  for (unsigned i = 0; i < m_config.get_num_lines(); i++) {
+#if 1
+    m_lines[i]->set_status(INVALID, -1);
+    m_lines[i]->reset_modified();
+#else
+    // XXX this is commented out - because not supporting sector cache
     for (unsigned j = 0; j < SECTOR_CHUNCK_SIZE; j++)
       m_lines[i]->set_status(INVALID, mem_access_sector_mask_t().set(j));
+#endif
+  }
 
   is_used = false;
 }
@@ -643,13 +679,14 @@ void cache_stats::inc_stats(mem_fetch *mf, int access_outcome) {
     assert(0 && "Unknown cache access type or access outcome");
 
   m_stats[access_type][access_outcome]++;
-  if(access_type == GLOBAL_ACC_R || access_type == GLOBAL_ACC_W)
-  {
-    if(mf->get_addr() >= GLOBAL_HEAP_START && mf->get_addr() < gscord_request.shadow_mem)
+  if (access_type == GLOBAL_ACC_R || access_type == GLOBAL_ACC_W) {
+    if (mf->get_addr() >= GLOBAL_HEAP_START &&
+        mf->get_addr() < gscord_request.shadow_mem)
       m_data_stats[access_outcome]++;
-    else if(mf->get_addr() >= gscord_request.shadow_mem && 
-      mf->get_addr() < gscord_request.shadow_mem + gscord_request.shadow_size)
-      m_shadow_stats[access_outcome]++;        
+    else if (mf->get_addr() >= gscord_request.shadow_mem &&
+             mf->get_addr() <
+                 gscord_request.shadow_mem + gscord_request.shadow_size)
+      m_shadow_stats[access_outcome]++;
   }
 }
 
@@ -740,8 +777,8 @@ cache_stats cache_stats::operator+(const cache_stats &cs) {
   }
 
   for (unsigned type = 0; type < NUM_CACHE_REQUEST_STATUS; ++type) {
-      ret.m_data_stats[type] = m_data_stats[type] + cs.m_data_stats[type];
-      ret.m_shadow_stats[type] = m_shadow_stats[type] + cs.m_shadow_stats[type];
+    ret.m_data_stats[type] = m_data_stats[type] + cs.m_data_stats[type];
+    ret.m_shadow_stats[type] = m_shadow_stats[type] + cs.m_shadow_stats[type];
   }
 
   ret.m_cache_port_available_cycles =
@@ -771,8 +808,8 @@ cache_stats &cache_stats::operator+=(const cache_stats &cs) {
   }
 
   for (unsigned type = 0; type < NUM_CACHE_REQUEST_STATUS; ++type) {
-      m_data_stats[type] += cs.m_data_stats[type];
-      m_shadow_stats[type] += cs.m_shadow_stats[type];
+    m_data_stats[type] += cs.m_data_stats[type];
+    m_shadow_stats[type] += cs.m_shadow_stats[type];
   }
 
   m_cache_port_available_cycles += cs.m_cache_port_available_cycles;
@@ -804,18 +841,15 @@ void cache_stats::print_stats(FILE *fout, const char *cache_name) const {
   }
 
   for (unsigned status = 0; status < NUM_CACHE_REQUEST_STATUS; ++status) {
-      fprintf(fout, "\t%s_data[%s] = %u\n",
-              m_cache_name.c_str(),
-              cache_request_status_str((enum cache_request_status) status),
-              m_data_stats[status]);
+    fprintf(fout, "\t%s_data[%s] = %u\n", m_cache_name.c_str(),
+            cache_request_status_str((enum cache_request_status)status),
+            m_data_stats[status]);
   }
 
-
   for (unsigned status = 0; status < NUM_CACHE_REQUEST_STATUS; ++status) {
-      fprintf(fout, "\t%s_shadow[%s] = %u\n",
-              m_cache_name.c_str(),
-              cache_request_status_str((enum cache_request_status) status),
-              m_shadow_stats[status]);
+    fprintf(fout, "\t%s_shadow[%s] = %u\n", m_cache_name.c_str(),
+            cache_request_status_str((enum cache_request_status)status),
+            m_shadow_stats[status]);
   }
 
   for (unsigned type = 0; type < NUM_MEM_ACCESS_TYPE; ++type) {
@@ -898,17 +932,16 @@ void cache_stats::get_sub_stats(struct cache_sub_stats &css) const {
   }
 
   for (unsigned status = 0; status < NUM_CACHE_REQUEST_STATUS; ++status) {
-      if (status == HIT || status == MISS || status == SECTOR_MISS || status == HIT_RESERVED)
-      {
-          t_css.data_accesses += m_data_stats[status];
-          t_css.shadow_accessses += m_shadow_stats[status];
-      }
+    if (status == HIT || status == MISS || status == SECTOR_MISS ||
+        status == HIT_RESERVED) {
+      t_css.data_accesses += m_data_stats[status];
+      t_css.shadow_accessses += m_shadow_stats[status];
+    }
 
-      if (status == MISS || status == SECTOR_MISS)
-      {
-          t_css.data_misses += m_data_stats[status];
-          t_css.shadow_misses += m_shadow_stats[status];
-      }
+    if (status == MISS || status == SECTOR_MISS) {
+      t_css.data_misses += m_data_stats[status];
+      t_css.shadow_misses += m_shadow_stats[status];
+    }
   }
 
   t_css.port_available_cycles = m_cache_port_available_cycles;
@@ -1088,7 +1121,16 @@ void baseline_cache::cycle() {
 /// Interface for response from lower memory level (model bandwidth restictions
 /// in caller)
 void baseline_cache::fill(mem_fetch *mf, unsigned time) {
-  if (m_config.m_mshr_type == SECTOR_ASSOC) {
+  printf_scord("@@ ######### CACHE: %s   mf:%x", this->m_name.c_str(), mf);
+  printf_scord("  : %s()\n", __FUNCTION__);
+  // printf("    ########### mf1: %p\n", mf);
+  bool hack = mf->get_original_mf();  // XXXXXXXXXXXX
+  if ((m_config.m_mshr_type == SECTOR_ASSOC) && !hack) {
+    // NO mf->original_mf
+    assert(0);  // not hit
+  } else if ((m_config.m_mshr_type == SECTOR_ASSOC) && hack) {
+    assert(0);  // XXX not hit
+    printf_scord("             ### type: SECTOR\n");
     assert(mf->get_original_mf());
     extra_mf_fields_lookup::iterator e =
         m_extra_mf_fields.find(mf->get_original_mf());
@@ -1097,36 +1139,46 @@ void baseline_cache::fill(mem_fetch *mf, unsigned time) {
 
     if (e->second.pending_read > 0) {
       // wait for the other requests to come back
+      printf_scord("         ###     still %d pending requests\n",
+                   e->second.pending_read);
       delete mf;
       return;
     } else {
       mem_fetch *temp = mf;
       mf = mf->get_original_mf();
+      // alvin: read the data here from the mf response
+      // bkpt_dummy_mf();
       delete temp;
     }
+  } else {
+    // assert(m_config.m_mshr_type != SECTOR_ASSOC);
+    assert(m_config.m_mshr_type == ASSOC);
+    printf_scord("             ### type: NORMAL\n");
   }
+  // printf("    ########### mf2: %p\n", mf);
 
   extra_mf_fields_lookup::iterator e = m_extra_mf_fields.find(mf);
-  assert(e != m_extra_mf_fields.end());
+  // bkpt_dummy_extra_mf(); // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  assert(e != m_extra_mf_fields.end());  // XXXXXXXXXXXXXXXXX
   assert(e->second.m_valid);
   mf->set_data_size(e->second.m_data_size);
   mf->set_addr(e->second.m_addr);
-  if (m_config.m_alloc_policy == ON_MISS)
+  if (m_config.m_alloc_policy == ON_MISS) {
     m_tag_array->fill(e->second.m_cache_index, time, mf);
-  else if (m_config.m_alloc_policy == ON_FILL) {
+  } else if (m_config.m_alloc_policy == ON_FILL) {
     m_tag_array->fill(e->second.m_block_addr, time, mf);
     if (m_config.is_streaming()) m_tag_array->remove_pending_line(mf);
   } else
     abort();
   bool has_atomic = false;
   m_mshrs.mark_ready(e->second.m_block_addr, has_atomic);
+  /*
   if (has_atomic) {
-    assert(m_config.m_alloc_policy == ON_MISS);
-    cache_block_t *block = m_tag_array->get_block(e->second.m_cache_index);
-    block->set_status(MODIFIED,
-                      mf->get_access_sector_mask());  // mark line as dirty for
-                                                      // atomic operation
-  }
+      assert(m_config.m_alloc_policy == ON_MISS);
+      cache_block_t* block = m_tag_array->get_block(e->second.m_cache_index);
+      block->set_status(MODIFIED, mf->get_access_sector_mask()); // mark line as
+  dirty for atomic operation
+  }*/
   m_extra_mf_fields.erase(mf);
   m_bandwidth_management.use_fill_port(mf);
 }
@@ -1182,35 +1234,26 @@ void baseline_cache::send_read_request(new_addr_type addr,
     m_mshrs.add(mshr_addr, mf);
     do_miss = true;
     // Generate mem_fetch to send info to SCORD on read miss
-    if(SCORD_PERF && mf->has_scord_metadata() && is_l1_cache())
-    {
+    if (SCORD_PERF && mf->has_scord_metadata() && is_l1_cache()) {
       const mem_access_t scord_access(
-              GLOBAL_ACC_R, 
-              mf->get_addr(), 0, mf->is_write(),
-              mf->get_access_warp_mask(), 
-              mf->get_access_byte_mask(), 
-              mf->get_access_sector_mask(), 
-              mf->get_ldst_data()
-      );
-      
+          GLOBAL_ACC_R, mf->get_addr(), 0, mf->is_write(),
+          mf->get_access_warp_mask(), mf->get_access_byte_mask(),
+          mf->get_access_sector_mask(), mf->get_ldst_data());
+
       // TODO: MAYANT: mem_fetch needs a gpusimcycle
       mem_fetch *scord_mf = new mem_fetch(
-              scord_access, 
-              &mf->get_inst(), 
-              (unsigned) 8, 
-              mf->get_wid(), 
-              mf->get_sid(), 
-              mf->get_tpc(), 
-              mf->get_mem_config(),
-              m_gpu->gpu_tot_sim_cycle + m_gpu->gpu_sim_cycle, NULL, mf
-      );
+          scord_access, &mf->get_inst(), (unsigned)8, mf->get_wid(),
+          mf->get_sid(), mf->get_tpc(), mf->get_mem_config(),
+          m_gpu->gpu_tot_sim_cycle + m_gpu->gpu_sim_cycle, NULL, mf);
 
       scord_mf->is_scord_data() = true;
       scord_mf->has_scord_metadata() = true;
       scord_mf->memspace = mf->memspace;
-      memcpy(scord_mf->get_scord_metadata(), mf->get_scord_metadata(), SCORD_PACKET_SIZE);
+      memcpy(scord_mf->get_scord_metadata(), mf->get_scord_metadata(),
+             SCORD_PACKET_SIZE);
       m_miss_queue.push_back(scord_mf);
-      printf_scord("scord L1 read_miss: Generating dup mf (%x) for detector\n", scord_mf);
+      printf_scord("scord L1 read_miss: Generating dup mf (%x) for detector\n",
+                   scord_mf);
     }
 
   } else if (!mshr_hit && mshr_avail &&
@@ -1749,7 +1792,8 @@ enum cache_request_status data_cache::access(new_addr_type addr, mem_fetch *mf,
       m_tag_array->probe(block_addr, cache_index, mf, true);
   enum cache_request_status access_status =
       process_tag_probe(wr, probe_status, addr, cache_index, mf, time, events);
-  m_stats.inc_stats(mf, m_stats.select_stats_status(probe_status, access_status));
+  m_stats.inc_stats(mf,
+                    m_stats.select_stats_status(probe_status, access_status));
   m_stats.inc_stats_pw(mf->get_access_type(), m_stats.select_stats_status(
                                                   probe_status, access_status));
   return access_status;

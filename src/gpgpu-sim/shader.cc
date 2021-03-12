@@ -2594,6 +2594,7 @@ void ldst_unit::writeback() {
         if (m_L1T->access_ready()) {
           mem_fetch *mf = m_L1T->next_access();
           m_next_wb = mf->get_inst();
+          do_deferred_ld_exec_wrapper(mf);
           delete mf;
           serviced_client = next_client;
         }
@@ -2602,16 +2603,19 @@ void ldst_unit::writeback() {
         if (m_L1C->access_ready()) {
           mem_fetch *mf = m_L1C->next_access();
           m_next_wb = mf->get_inst();
+          printf_scord("  ##  mf: %x   -- Const cache response\n");
+          do_deferred_ld_exec_wrapper(mf);
           delete mf;
           serviced_client = next_client;
         }
         break;
       case 3:  // global/local
-        
-        // TODO: MAYANT: Copy this from ScoRD tomorrow~
         if (m_next_global) {
           m_next_wb = m_next_global->get_inst();
           if (m_next_global->isatomic()) {
+              // Atomic, send to L2
+              printf_scord("####################      atomic wb, %d\n", m_next_wb.get_atomic_scope());
+              // TODO: MAYANT: This statement is not there in ScoRD 
             m_core->decrement_atomic_count(
                 m_next_global->get_wid(),
                 m_next_global->get_access_warp_mask().count());
