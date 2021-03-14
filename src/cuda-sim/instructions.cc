@@ -1497,32 +1497,10 @@ void atom_callback_a(const inst_t *inst, ptx_thread_info *thread, struct deferre
     write_msg->opresult = op_result;
     write_msg->thread = thread;
     write_msg->pinstr = pI;
-    return 0;
   } else {
     printf("Execution error: data_ready not set\n");
     assert(0);
   }
-}
-
-void atom_callback_commitwrite(deferred_write_msg_s *wmsg, cache_block_t *location = NULL)
-{
-  memory_space *mem = NULL;
-  if(location == NULL)
-  {
-  mem = wmsg->mem;
-  mem->write(wmsg->eaddr,
-            wmsg->size,
-            &(wmsg->opresult),
-            wmsg->thread,
-            wmsg->pinstr);
-  }
-  else
-  {
-    memcpy((unsigned char*)location->m_line_data + (wmsg->eaddr & 127), &(wmsg->opresult), wmsg->size);
-    for(int i = 0; i < wmsg->size; ++i)
-        location->m_data_modified[i + (wmsg->eaddr & 127)] = true;
-  }
-  
 }
 
 void atom_callback( const inst_t* inst, ptx_thread_info* thread)
@@ -1531,29 +1509,16 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread)
   // which can overlap with other atomics happening at global scope.
   printf_scord("###\t\t\tUndergoing atomic callback\n");
   deferred_write_msg_s *wmsg = new deferred_write_msg_s;
-  int rc = atom_callback_a(inst, thread, wmsg);
-
-  if (rc == 0) {
-      atom_callback_commitwrite(wmsg, thread->m_ldst_data.location);
-  }
-  // Release lock on atomic variable
-  //scord_thread_atomgeneric(thread, dynamic_cast<const ptx_instruction*>(inst)->get_atomic_scope(), true);
-
+  atom_callback_a(inst, thread, wmsg);
   delete wmsg;
 }
 
 deferred_write_msg_s *
 atom_callback_trampoline( const inst_t* inst, ptx_thread_info* thread)
 {
-  memory_space *mem = NULL;
   deferred_write_msg_s *wmsg = new deferred_write_msg_s;
-  int rc = atom_callback_a(inst, thread, wmsg);
-
-  mem = wmsg->mem;
-  if (rc == 0) {
-      return wmsg;
-  }
-  return NULL;
+  atom_callback_a(inst, thread, wmsg);
+  return wmsg;
 }
 
 // atom_impl will now result in a callback being called in mem_ctrl_pop

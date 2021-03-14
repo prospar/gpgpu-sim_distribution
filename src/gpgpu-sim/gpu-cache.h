@@ -108,19 +108,7 @@ struct cache_block_t {
   cache_block_t() {
     m_tag = 0;
     m_block_addr = 0;
-    m_line_sz = line_sz;
     m_line_data = NULL;
-  }
-
-  cache_block_t(unsigned line_sz, bool keep_data) {
-    m_tag = 0;
-    m_block_addr = 0;
-    m_line_sz = line_sz;
-    m_line_data = NULL;
-    if (keep_data) {
-      m_line_data = (unsigned *)alvin_malloc(line_sz);
-      m_data_modified = std::vector<bool>(line_sz, false);
-    }
   }
 
   virtual ~cache_block_t() {
@@ -159,131 +147,9 @@ struct cache_block_t {
   virtual bool is_readable(mem_access_sector_mask_t sector_mask) = 0;
   virtual void print_status() = 0;
 
-  void cblk_read_data(mem_fetch *mf, bool only_dirty = true) {
-    unsigned *mf_data = mf->get_data_array();
-    unsigned mf_sz = mf->get_data_size();
-    new_addr_type mf_addr = mf->get_addr();
-    if (mf->memspace == NULL) {
-      mf->memspace = memspace;
-    }
-
-    printf_scord(
-        "@@ cyc%u cblk ### read data from cacheblock -> MF     | mf: %x\n",
-        gpu_sim_cycle, mf);
-    printf_scord("@@ cblk\tread: cline -> MF %x (addr: %x\tsz:%d,\tspace=%x)\n",
-                 mf, mf_addr, mf_sz, mf->memspace);
-
-    if (m_line_data != NULL) {
-      assert(mf_sz <= m_line_sz);
-      this->cblk_print_block_data("Read");
-#ifdef BYTE_GRANULARITY
-      for (int i = 0; i < mf_sz; ++i) {
-        int offset = ((mf_addr & 127) / mf_sz) * mf_sz;
-        memcpy((unsigned char *)mf_data + offset + i,
-               (unsigned char *)m_line_data + offset + i, 1);
-        mf->set_data_used(offset + i);
-      }
-#else
-      memcpy((unsigned char *)mf_data, (unsigned char *)m_line_data, 128);
-      for (int i = 0; i < 128; ++i) {
-        mf->set_data_used(offset + i);
-      }
-#endif
-      mf->set_data_valid(true);
-      mf->print_data_array();
-    } else {
-      mf->set_data_valid(false);
-      printf_scord("\t\t read: NO-BACKING-STORE\n");
-    }
-  }
-
-  void cblk_print_block_data(char *header) {
-    int num;
-    printf_scord("\tCACHE_BLOCK: %s  size:%u\n\t", header, m_line_sz);
-    num = m_line_sz / sizeof(m_line_data[0]);
-
-    for (int i = 0; i < num; ++i) {
-      printf_scord("0x%08x ", m_line_data[0]);
-      if ((i % 8) == 7) {
-        printf_scord("\n\t");
-      }
-    }
-    printf_scord("\n");
-  }
-
-  void cblk_write_data(mem_fetch *mf, bool set_modified = true) {
-    unsigned *mf_data = mf->get_data_array();
-    unsigned mf_sz = mf->get_data_size();
-    new_addr_type mf_addr = mf->get_addr();
-    memspace = mf->memspace;
-
-    printf_scord(
-        "@@ cyc%u cblk ### write data from MF -> cacheblock    | mf: %x\n",
-        gpu_sim_cycle, mf);
-    printf_scord("@@ cblk\twrite: MF %x (addr: %x\tsz:%d\tspace=%x) -> cline\n",
-                 mf, mf_addr, mf_sz, memspace);
-
-    if (mf && mf->isatomic() && mf->is_write()) {
-      this->cblk_print_block_data("Before Atomic Write");
-      mf->do_atomic(this);
-      this->cblk_print_block_data("After Atomic Write");
-    } else if (mf->get_data_valid()) {
-      if (m_line_data != NULL) {
-        // assert(mf_sz == m_line_sz);     // is <= sufficient?
-        assert(mf_sz <= m_line_sz);
-
-        // memcpy(m_line_data, mf_data, m_line_sz);
-
-        // unsigned ds = mf->is_write()?  mf_sz : m_line_sz;       // for store,
-        // dont write the whole line unsigned off = mf->is_write()? ((*i)->addr
-        // & (m_line_sz -1)) : 0;
-
-        this->cblk_print_block_data("Before Write");
-        printf_scord("memcpy datasize %u\n", mf_sz);
-        mf->print_data_array();
-        // In case of write, only modify the data required
-
-        if (mf->is_write()) {
-          for (auto i = 0; i < m_line_sz; ++i) {
-            if (mf->get_data_used().test(i)) {
-              memcpy((unsigned char *)m_line_data + i,
-                     (unsigned char *)mf_data + i, 1);
-              m_data_modified[i] = set_modified;
-            }
-          }
-        }
-        // In case of fill, write the entire line, avoiding updating the already
-        // modified parts
-        else {
-          for (auto i = 0; i < m_line_sz; ++i) {
-            if (mf->get_data_used().test(i) && !m_data_modified[i]) {
-              memcpy((unsigned char *)m_line_data + i,
-                     (unsigned char *)mf_data + i, 1);
-              m_data_modified[i] = set_modified;
-            }
-          }
-        }
-
-        this->cblk_print_block_data("After Write");
-      } else {
-        mf->set_data_valid(false);  // this is not necessary
-        printf_scord("\t\t write: NO-BACKING-STORE\n");
-      }
-    } else {
-      printf_scord("\t # MF data is invalid\n");
-    }
-  }
-
-  void reset_modified() {
-    for (auto i = m_data_modified.begin(); i != m_data_modified.end(); ++i)
-      (*i) = false;
-  }
-
-  std::vector<bool> m_data_modified;
   new_addr_type m_tag;
   new_addr_type m_block_addr;
   memory_space *memspace;
-  int m_line_sz;
   unsigned *m_line_data;
 };
 

@@ -438,14 +438,8 @@ void tag_array::flush() {
   for (unsigned i = 0; i < m_config.get_num_lines(); i++)
     if (m_lines[i]->is_modified_line()) {
       // NOTE: MAYANT: They don't support sector caches? :o
-#if 1
-      m_lines[i]->set_status(INVALID, -1);
-      m_lines[i]->reset_modified();
-#else
-      // XXX this is commented out - because not supporting sector cache
       for (unsigned j = 0; j < SECTOR_CHUNCK_SIZE; j++)
         m_lines[i]->set_status(INVALID, mem_access_sector_mask_t().set(j));
-#endif
     }
 
   is_used = false;
@@ -456,14 +450,8 @@ void tag_array::invalidate() {
 
   printf_scord("@@   --------------------------- TA invalidate\n");
   for (unsigned i = 0; i < m_config.get_num_lines(); i++) {
-#if 1
-    m_lines[i]->set_status(INVALID, -1);
-    m_lines[i]->reset_modified();
-#else
-    // XXX this is commented out - because not supporting sector cache
     for (unsigned j = 0; j < SECTOR_CHUNCK_SIZE; j++)
       m_lines[i]->set_status(INVALID, mem_access_sector_mask_t().set(j));
-#endif
   }
 
   is_used = false;
