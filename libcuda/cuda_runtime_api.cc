@@ -3597,7 +3597,11 @@ unsigned CUDARTAPI __cudaPushCallConfiguration(dim3 gridDim, dim3 blockDim,
   if (g_debug_execution >= 3) {
     announce_call(__my_func__);
   }
-  cudaConfigureCallInternal(gridDim, blockDim, sharedMem, stream);
+  
+  // cudaConfigureCallInternal(gridDim, blockDim, sharedMem, stream);
+  gpgpu_context *ctx = GPGPU_Context();
+  ctx->api->g_cuda_launch_stack.push_back(kernel_config(gridDim, blockDim, sharedMem, stream));
+  return g_last_cudaError = cudaSuccess;
 }
 
 cudaError_t CUDARTAPI __cudaPopCallConfiguration(dim3 *gridDim, dim3 *blockDim,

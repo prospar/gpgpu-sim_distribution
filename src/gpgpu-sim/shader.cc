@@ -987,7 +987,7 @@ void exec_shader_core_ctx::func_exec_inst(warp_inst_t &inst) {
   printf_scord("%s: from issue_warp\n", __FUNCTION__);
   if(!SCORD_SILENT)
   {
-    printf("@@ cyc%d;  s%u insn %p ", gpu_sim_cycle, this->get_sid(), &inst);
+    printf("@@ cyc%d;  s%u insn %p ", 0 /* TODO: MAYANT: get gpu_sim_cycle here from gpgpu_t */, this->get_sid(), &inst);
     inst.print(stdout);
   }
   //inst.m_ldst_unit = this->m_ldst_unit;   // for use by ld/st opcodes

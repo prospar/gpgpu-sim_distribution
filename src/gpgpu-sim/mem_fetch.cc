@@ -79,7 +79,9 @@ mem_fetch::mem_fetch(const mem_access_t &access, const warp_inst_t *inst,
   m_scord_data = false;
   //m_fence_flush_wb = false; 
 #endif
-  printf_scord("@@ cyc%d  s%d  ###  --- mf: %x  CREATED  i:%x m_inst:%x  addr:%x ###################\n", gpu_sim_cycle, m_sid, this, inst, m_inst, access.get_addr());
+  printf_scord("@@ cyc%d  s%d  ###  --- mf: %x  CREATED  i:%x m_inst:%x  addr:%x ###################\n", 
+    0 /* TODO: MAYANT: get gpu_sim_cycle here from gpgpu_t */,
+    m_sid, this, inst, m_inst, access.get_addr());
   if( inst ) { 
     printf_scord("@@    ---  s%d mf insn ", sid); if(SCORD_PRINT) inst->print(stdout);
   }

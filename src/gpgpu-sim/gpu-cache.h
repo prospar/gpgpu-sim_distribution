@@ -101,9 +101,6 @@ const char *cache_request_status_str(enum cache_request_status status);
 
 unsigned long *alvin_malloc(int line_sz);
 
-// NOTE: MAYANT: This is used in a couple of printf_scord statements
-extern unsigned long long gpu_sim_cycle;
-
 struct cache_block_t {
   cache_block_t() {
     m_tag = 0;
