@@ -1111,13 +1111,8 @@ void baseline_cache::cycle() {
 void baseline_cache::fill(mem_fetch *mf, unsigned time) {
   printf_scord("@@ ######### CACHE: %s   mf:%x", this->m_name.c_str(), mf);
   printf_scord("  : %s()\n", __FUNCTION__);
-  // printf("    ########### mf1: %p\n", mf);
-  bool hack = mf->get_original_mf();  // XXXXXXXXXXXX
-  if ((m_config.m_mshr_type == SECTOR_ASSOC) && !hack) {
-    // NO mf->original_mf
-    assert(0);  // not hit
-  } else if ((m_config.m_mshr_type == SECTOR_ASSOC) && hack) {
-    assert(0);  // XXX not hit
+
+  if (m_config.m_mshr_type == SECTOR_ASSOC) {
     printf_scord("             ### type: SECTOR\n");
     assert(mf->get_original_mf());
     extra_mf_fields_lookup::iterator e =
@@ -1127,46 +1122,52 @@ void baseline_cache::fill(mem_fetch *mf, unsigned time) {
 
     if (e->second.pending_read > 0) {
       // wait for the other requests to come back
-      printf_scord("         ###     still %d pending requests\n",
-                   e->second.pending_read);
+      printf_scord("         ###     still %d pending requests\n", e->second.pending_read);
       delete mf;
       return;
     } else {
       mem_fetch *temp = mf;
       mf = mf->get_original_mf();
-      // alvin: read the data here from the mf response
-      // bkpt_dummy_mf();
       delete temp;
     }
   } else {
-    // assert(m_config.m_mshr_type != SECTOR_ASSOC);
-    assert(m_config.m_mshr_type == ASSOC);
+    // NOTE: MAYANT: Allow other kinds of MSHRs too here right?
+    // assert(m_config.m_mshr_type == ASSOC);
     printf_scord("             ### type: NORMAL\n");
   }
-  // printf("    ########### mf2: %p\n", mf);
 
+  // NOTE: MAYANT: Fetch extra data for this mem_fetch request
   extra_mf_fields_lookup::iterator e = m_extra_mf_fields.find(mf);
-  // bkpt_dummy_extra_mf(); // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-  assert(e != m_extra_mf_fields.end());  // XXXXXXXXXXXXXXXXX
+  
+  // validate the extra metadata
+  assert(e != m_extra_mf_fields.end());
   assert(e->second.m_valid);
+
   mf->set_data_size(e->second.m_data_size);
   mf->set_addr(e->second.m_addr);
   if (m_config.m_alloc_policy == ON_MISS) {
     m_tag_array->fill(e->second.m_cache_index, time, mf);
   } else if (m_config.m_alloc_policy == ON_FILL) {
     m_tag_array->fill(e->second.m_block_addr, time, mf);
-    if (m_config.is_streaming()) m_tag_array->remove_pending_line(mf);
-  } else
+    if (m_config.is_streaming()) {
+      m_tag_array->remove_pending_line(mf);
+    }
+  } else {
     abort();
+  }
+
+  // NOTE: MAYANT: What does this do for atomic operations?
+  // The if (has_atomic) was commented out in ScoRD
   bool has_atomic = false;
   m_mshrs.mark_ready(e->second.m_block_addr, has_atomic);
-  /*
   if (has_atomic) {
-      assert(m_config.m_alloc_policy == ON_MISS);
-      cache_block_t* block = m_tag_array->get_block(e->second.m_cache_index);
-      block->set_status(MODIFIED, mf->get_access_sector_mask()); // mark line as
-  dirty for atomic operation
-  }*/
+    assert(m_config.m_alloc_policy == ON_MISS);
+    cache_block_t *block = m_tag_array->get_block(e->second.m_cache_index);
+    block->set_status(MODIFIED,
+                      mf->get_access_sector_mask());  // mark line as dirty for
+                                                      // atomic operation
+  }
+  
   m_extra_mf_fields.erase(mf);
   m_bandwidth_management.use_fill_port(mf);
 }
