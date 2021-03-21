@@ -1158,7 +1158,7 @@ struct deferred_write_msg_s {
     const ptx_instruction *pinstr;
 };
 
-void atom_callback_a(const inst_t *inst, ptx_thread_info *thread, struct deferred_write_msg_s *write_msg) {
+int atom_callback_a(const inst_t *inst, ptx_thread_info *thread, struct deferred_write_msg_s *write_msg) {
   const ptx_instruction *pI = dynamic_cast<const ptx_instruction *>(inst);
 
   // "Decode" the output type
@@ -1489,7 +1489,11 @@ void atom_callback_a(const inst_t *inst, ptx_thread_info *thread, struct deferre
   // Write operation result into  memory
   // (i.e. copy src1_data to dst)
   if (data_ready) {
+    // NOTE: MAYANT: In the normal gpgpu-sim, this mem_write here completes the atomic operation
+    // but in ScoRD, this write is deferred because atomics can be interrupted by other atomics
+    // outside their scope
     //mem->write(effective_address,size/8,&op_result.s64,thread,pI);
+    
     // defer the write,  fill up the data in write_msg for later commit
     write_msg->mem = mem;
     write_msg->eaddr = effective_address;
@@ -1497,10 +1501,34 @@ void atom_callback_a(const inst_t *inst, ptx_thread_info *thread, struct deferre
     write_msg->opresult = op_result;
     write_msg->thread = thread;
     write_msg->pinstr = pI;
+    return 0;
   } else {
     printf("Execution error: data_ready not set\n");
     assert(0);
   }
+  return -1;
+}
+
+void atom_callback_commitwrite(deferred_write_msg_s *wmsg, cache_block_t *location = NULL)
+{
+    memory_space *mem = NULL;
+   if(location == NULL)
+   {
+    mem = wmsg->mem;
+    mem->write(wmsg->eaddr,
+              wmsg->size,
+              &(wmsg->opresult),
+              wmsg->thread,
+              wmsg->pinstr);
+   }
+   else
+   {
+      memcpy((unsigned char*)location->m_line_data + (wmsg->eaddr & 127), &(wmsg->opresult), wmsg->size);
+
+      // TODO: MAYANT: Is the m_data_modified field necessary for gpgpu-sim or is it part of ScoRD?
+      // for(int i = 0; i < wmsg->size; ++i)
+      //    location->m_data_modified[i + (wmsg->eaddr & 127)] = true;
+   }
 }
 
 void atom_callback( const inst_t* inst, ptx_thread_info* thread)
@@ -1509,7 +1537,13 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread)
   // which can overlap with other atomics happening at global scope.
   printf_scord("###\t\t\tUndergoing atomic callback\n");
   deferred_write_msg_s *wmsg = new deferred_write_msg_s;
-  atom_callback_a(inst, thread, wmsg);
+
+  int rc = atom_callback_a(inst, thread, wmsg);
+  if (rc == 0) {
+      atom_callback_commitwrite(wmsg, thread->m_ldst_data.location);
+  }
+
+  // TODO: MAYANT: The result of the atomic write is in wmsg, process it further?
   delete wmsg;
 }
 
@@ -3461,6 +3495,9 @@ void mem_read_w(memory_space *mem,
    printf_scord("\t### ld-defer DATA.u64: NIL  ##################\n");
    if(!SCORD_PERF && pI->get_space() == global_space)
       scord_gmem_read(addr, length, thd);
+
+  // TODO: MAYANT: Similar to mem_write_w
+  mem->read(addr, length, data);             // XXX comment this out later
 }
 
 // static
@@ -3483,6 +3520,9 @@ void mem_write_w(memory_space *mem,
    thd->m_ldst_data.wdata = (unsigned long long)(data->s64);  // only for st
    if(!SCORD_PERF && pI->get_space() == global_space)
       scord_gmem_write(addr, length, thd);
+
+  // TODO: MAYANT: Placing this here to actually complete the write and continue
+  mem->write(addr,length, data, thd, pI);
 }
 
 
@@ -3600,13 +3640,21 @@ void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread) {
 #if 1
     if(space.get_type() == shared_space)
     {
-        mem->read(addr,size/8,&data.s64);
-        if( type == S16_TYPE || type == S32_TYPE ) 
-          sign_extend(data,size,dst);
-        thread->set_operand_value(dst,data, type, thread, pI);
+        // TODO: MAYANT: shared_space is when the address is shared within 1 CTA
+        mem->read(addr, size / 8, &data.s64);
+        if( type == S16_TYPE || type == S32_TYPE )
+        {
+          sign_extend(data, size, dst);
+        }
+        thread->set_operand_value(dst, data, type, thread, pI);
     }
     else
-        mem_read_w(mem,addr,size/8,&data.s64,thread,pI);
+    {
+      // NOTE: MAYANT: Trigger ScoRD race detection logic
+      mem_read_w(mem, addr, size / 8, &data.s64, thread, pI);
+      if (type == S16_TYPE || type == S32_TYPE) sign_extend(data, size, dst);
+      thread->set_operand_value(dst, data, type, thread, pI);
+    }
 #endif
 
 #if 0
@@ -6008,6 +6056,7 @@ void st_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
   if (!vector_spec) {
     data = thread->get_operand_value(src1, dst, type, thread, 1);
+    // mem->write(addr,size/8,&data.s64,thread,pI);
     if(space.get_type() == shared_space)
         mem->write(addr,size/8,&data.s64,thread,pI);
     else

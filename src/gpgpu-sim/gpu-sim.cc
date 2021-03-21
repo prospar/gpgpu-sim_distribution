@@ -1760,7 +1760,7 @@ void gpgpu_sim::cycle() {
           mf->set_status(IN_ICNT_TO_SHADER, gpu_sim_cycle + gpu_tot_sim_cycle);
           ::icnt_push(m_shader_config->mem2device(i), mf->get_tpc(), mf,
                       response_size);
-          m_memory_sub_partition[i]->pop();
+          m_memory_sub_partition[i]->pop(); // NOTE: MAYANT: This calls the atomic write
           partiton_replys_in_parallel_per_cycle++;
         } else {
           gpu_stall_icnt2sh++;

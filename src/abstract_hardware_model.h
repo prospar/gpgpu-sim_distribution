@@ -42,11 +42,12 @@ class gpgpu_context;
 #define MAX_INPUT_VALUES 24
 #define MAX_OUTPUT_VALUES 8
 
+// NOTE: MAYANT: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#state-spaces
 enum _memory_space_t {
   undefined_space = 0,
   reg_space,
   local_space,
-  shared_space,
+  shared_space, /* memory shared between threads in 1 CTA */
   sstarr_space,
   param_space_unclassified,
   param_space_kernel, /* global to all threads in a kernel : read-only */

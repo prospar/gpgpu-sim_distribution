@@ -162,13 +162,14 @@ static inline unsigned CHECK_ADDR(addr_t addr) {
 EXPORT
 void scord_kernel_restart(gpgpu_t *gpu)
 {
+    p_gpu = (gpgpu_sim*) gpu;
+
     if(!SCORD_ENABLED)
         SCORD_PERF = 0;
     
     if(SCORD_PERF)
     {
         gscord_request.reset(gpu);
-        p_gpu = (gpgpu_sim*) gpu;
     }
     else
         initdone = false;
