@@ -74,7 +74,7 @@ void scord_reg_options(option_parser_t opp)
                "1");
     option_parser_register(opp, "-scord_perf", OPT_BOOL, &SCORD_PERF, 
             "whether performance version of race detection is switched on",
-            "1");
+            "0");
     option_parser_register(opp, "-scord_granularity", OPT_INT32, &GRANULARITY, 
             "granularity of tracking for race detector for normal, bytes per metadata entry for md caching (def=4)",
             "4");
@@ -249,6 +249,9 @@ void scord_gmem_read(unsigned addr, unsigned size, ptx_thread_info *pti) // XXX
         wd->atom       = pI->isatomic();
         wd->scope = (pI->get_atomic_scope() == 408 ? 1 : 0);
         wd->inst       = pI->pc;
+        
+        // NOTE: MAYANT: Set volatile
+        wd->vol = (pI->cache_op == CACHE_VOLATILE);
 
         unsigned oxd = get_execid(md->ctaid, md->warpid);
         if(md->warpid == ID_INVALID)
@@ -280,6 +283,9 @@ void scord_gmem_write(unsigned addr, unsigned size, ptx_thread_info *pti)
         xd->atom       = pI->isatomic();
         xd->scope = (pI->get_atomic_scope() == 408 ? 1 : 0);
         xd->inst       = pI->pc;
+
+        // NOTE: MAYANT: Set volatile
+        xd->vol = (pI->cache_op == CACHE_VOLATILE);
 
         unsigned oxd = get_execid(md->ctaid, md->warpid);
         if(md->warpid == ID_INVALID)
@@ -371,6 +377,10 @@ void scord_thread_atomgeneric(ptx_thread_info *pti, unsigned level, bool unlock,
     if(SCORD_ENABLED)
     {
         switch(level) {
+            // NOTE: MAYANT: case 0? Also should have a break at the end maybe?
+            // GLOBAL_OPTION = 407,
+            // CTA_OPTION = 408,
+            // SYS_OPTION = 409,
             case 0:   scord_thread_devatom(pti, unlock, lockid);
             case 408: scord_thread_blkatom(pti, unlock, lockid); break;
         }

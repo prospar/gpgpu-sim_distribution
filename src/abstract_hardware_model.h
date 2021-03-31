@@ -1244,7 +1244,6 @@ class warp_inst_t : public inst_t {
   bool m_cache_hit;
   unsigned long long issue_cycle;
   unsigned cycles;  // used for implementing initiation interval delay
-  bool m_isatomic;
   bool should_do_atomic;
   bool m_is_printf;
   unsigned m_warp_id;
@@ -1280,6 +1279,7 @@ class warp_inst_t : public inst_t {
  public:
   int m_is_cdp;
   int m_membar_level;
+  bool m_isatomic;
   int m_atom_scope;
   int m_doatomic_dcount;
   int m_atomic_delay;

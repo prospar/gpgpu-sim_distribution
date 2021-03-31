@@ -1361,9 +1361,11 @@ ptx_instruction::ptx_instruction(
         break;
       case CTA_OPTION:
         m_membar_level = CTA_OPTION;
+        m_atom_scope = CTA_OPTION;
         break;
       case SYS_OPTION:
         m_membar_level = SYS_OPTION;
+        m_atom_scope = SYS_OPTION;
         break;
       case FTZ_OPTION:
         break;
@@ -1415,7 +1417,7 @@ ptx_instruction::ptx_instruction(
   }
   m_scalar_type = scalar_type;
   m_space_spec = space_spec;
-  if ((opcode == ST_OP || opcode == LD_OP || opcode == LDU_OP) &&
+  if ((opcode == ST_OP || opcode == LD_OP || opcode == LDU_OP || opcode == ST_VOL_OP || opcode == LD_VOL_OP) &&
       (space_spec == undefined_space)) {
     m_space_spec = generic_space;
   }

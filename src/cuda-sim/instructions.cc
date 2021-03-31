@@ -1607,8 +1607,10 @@ void atom_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->m_ldst_data.thread = thread;
   thread->m_ldst_data.pI = (ptx_instruction *)pI;
 
-  if(!SCORD_PERF && space == global_space)
+  if(!SCORD_PERF && space == global_space) {
+    const_cast<ptx_instruction*>(pI)->m_isatomic = true;
     scord_gmem_write(effective_address_final, 4, thread);
+  }
 }
 
 void bar_impl(const ptx_instruction *pIin, ptx_thread_info *thread) {

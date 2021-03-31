@@ -748,6 +748,9 @@ void ptx_instruction::set_opcode_and_latency() {
     case LD_OP:
       op = LOAD_OP;
       break;
+    case LD_VOL_OP:
+      op = LOAD_OP;
+      break;
     case MMA_LD_OP:
       op = TENSOR_CORE_LOAD_OP;
       break;
@@ -755,6 +758,9 @@ void ptx_instruction::set_opcode_and_latency() {
       op = LOAD_OP;
       break;
     case ST_OP:
+      op = STORE_OP;
+      break;
+    case ST_VOL_OP:
       op = STORE_OP;
       break;
     case MMA_ST_OP:
@@ -1075,6 +1081,8 @@ void ptx_instruction::pre_decode() {
       // else if( m_opcode == ST_OP )
       else if (m_opcode == MMA_ST_OP || m_opcode == ST_OP)
         cache_op = CACHE_WRITE_BACK;
+      else if(m_opcode == ST_VOL_OP || m_opcode == LD_VOL_OP) // NOTE: MAYANT: The CV_OPTION is not set somehow, make volatile manually
+         cache_op = CACHE_VOLATILE;
       else if (m_opcode == ATOM_OP)
         cache_op = CACHE_GLOBAL;
       break;
